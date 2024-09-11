@@ -8,8 +8,14 @@ cv2.waitKey(10)
 
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 cv2.imshow('grayscale', gray)
-time.sleep(10)
+time.sleep(5)
 cv2.waitKey(10)
+
+edge = cv2.Canny(image, 50, 150)
+cv2.waitKey(10)
+cv2.imshow('edge detection', edge)
+time.sleep(5)
+cv2.waitKey(0)
 
 time.sleep(10)
 cv2.destroyAllWindows()
