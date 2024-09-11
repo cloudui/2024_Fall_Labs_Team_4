@@ -33,9 +33,6 @@ print(data1_rms)
 print(data2_rms)
 print(data3_rms)
 
-# R = cross_corr(data1, data2)
-# print(R)
-
 max_time1 = data1.size/samplerate1
 time_steps1 = np.linspace(0, max_time1, data1.size)
 max_time2 = data2.size/samplerate2
