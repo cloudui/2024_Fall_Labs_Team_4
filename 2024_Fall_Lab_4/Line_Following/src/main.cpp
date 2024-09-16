@@ -58,10 +58,39 @@ float Ki;
 /*
  *  Line sensor functions
  */
+// void readADC() {
+//   for (int i = 0; i < 8; i++) {
+//     adc1_buf[i] = adc1.readADC(i);
+//     adc2_buf[i] = adc2.readADC(i);
+//   }
+// }
+
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    adc1_buf[i] = adc1.readADC(i);
-    adc2_buf[i] = adc2.readADC(i);
+    if (adc1.readADC(i) > 700){
+      adc1_buf[i] = 0;
+    }
+    else{
+      adc1_buf[i] = 1;
+    }
+
+    if (adc2.readADC(i) > 700){
+      adc2_buf[i] = 0;
+    }
+    else{
+      adc2_buf[i] = 1;
+    }
+
+    //adc1_buf[i] = adc1.readADC(i);
+    //adc2_buf[i] = adc2.readADC(i);
+
+    if (i<7) {
+      Serial.print(adc1_buf[i]); Serial.print("\t");
+    }
+
+    if (i<6) {
+      Serial.print(adc2_buf[i]); Serial.print("\t");
+    }
   }
 }
 
