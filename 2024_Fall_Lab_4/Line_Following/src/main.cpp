@@ -94,6 +94,26 @@ void readADC() {
   }
 }
 
+int32_t all_same(){
+  if(adc1_buf[0] == 1){
+    for(int i = 0; i < 8; i++) {
+      if(adc1_buf[i] != 1 || adc2_buf[i] != 1){
+        return 1;
+      }
+    }
+  }
+
+  else{
+    for(int i = 0; i < 8; i++) {
+      if(adc1_buf[i] != 0 || adc2_buf[i] != 0){
+        return 1;
+      }
+    }
+  }
+
+  return 0;
+}
+
 // Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
 void digitalConvert() {
   int threshold = 700;
@@ -227,7 +247,11 @@ void loop() {
     M2_forward(leftWheelPWM);
 
     // Check for corners
-    if(/* Condition for corner */) {
+    if(all_same() == 0) {
+      /* back up until it detects both black and white
+       * then if there is white on the right, turn right
+       * else if there is white on the left, turn left
+      */
       turnCorner(/* Arguments */);
     }
 
