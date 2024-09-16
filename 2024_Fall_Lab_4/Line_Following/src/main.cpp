@@ -91,13 +91,30 @@ void digitalConvert() {
 }
 
 // Calculate robot's position on the line 
-float getPosition(/* Arguments */) {
+float getPosition() {
   int position = 6;
   /* Using lineArray[], which is an array of 13 Boolean values representing 1 
    * if the line sensor reads a white surface and 0 for a dark surface, 
    * this function returns a value between 0-12 for where the sensor thinks 
    * the center of line is (6 being the middle)
    */
+  int first = 0;
+  int last = 12;
+
+  for (int i = 0; i < 13; i++) {
+    if (lineArray[i] == 1) {
+      first = i;
+      break;
+    }
+  }
+
+  for (int i = 12; i >= 0; i--) {
+    if (lineArray[i] == 1) {
+      last = i;
+      break;
+    }
+  }
+  position = (first + last) / 2;
   return position;
 }
 
