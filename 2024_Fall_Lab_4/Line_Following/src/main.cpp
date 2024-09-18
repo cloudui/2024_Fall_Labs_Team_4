@@ -249,8 +249,8 @@ void loop() {
     M2_forward(leftWheelPWM);
 
     // Check for corners
-    same = all_same()
-    if(all_same() > 0) {
+    int same = all_same()
+    if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
        * then if there is white on the right, turn right
