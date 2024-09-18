@@ -80,24 +80,13 @@ void readADC() {
     else{
       adc2_buf[i] = 1;
     }
-
-    //adc1_buf[i] = adc1.readADC(i);
-    //adc2_buf[i] = adc2.readADC(i);
-
-    if (i<7) {
-      Serial.print(adc1_buf[i]); Serial.print("\t");
-    }
-
-    if (i<6) {
-      Serial.print(adc2_buf[i]); Serial.print("\t");
-    }
   }
 }
 
 int32_t all_same(){
   if(adc1_buf[0] == 1){
     for(int i = 0; i < 8; i++) {
-      if(adc1_buf[i] != 1 || adc2_buf[i] != 1){
+      if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
         return 0;
       }
     }
@@ -107,7 +96,7 @@ int32_t all_same(){
 
   else{
     for(int i = 0; i < 8; i++) {
-      if(adc1_buf[i] != 0 || adc2_buf[i] != 0){
+      if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
         return 0;
       }
     }
@@ -190,6 +179,19 @@ void turnCorner(/* Arguments */) {
    */
 }
 
+void printADC(){
+  for (int i = 0; i < 8; i++) {
+    if (i<7) {
+      Serial.print(adc1_buf[i]); Serial.print("\t");
+    }
+
+    if (i<6) {
+      Serial.print(adc2_buf[i]); Serial.print("\t");
+    }
+  }
+  Serial.println("");
+}
+
 /*
  *  setup and loop
  */
@@ -231,33 +233,69 @@ void loop() {
     float pos;
 
     readADC();
+    printADC();
     digitalConvert();
+    Serial.println("forward");
 
     pos = getPosition(/* Arguments */);
     
     // Define the PID errors
-    e = ;
-    d_e = ; 
-    total_e= ;
+    e = 1;
+    d_e = 1; 
+    total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = ;
-    rightWheelPWM = ;
-    leftWheelPWM = ;
+    u = 150;
+    rightWheelPWM = PWM_MAX - u;
+    leftWheelPWM = PWM_MAX + u;
 
-    M1_forward(rightWheelPWM);
-    M2_forward(leftWheelPWM);
+    // M1_forward(rightWheelPWM);
+    // M2_forward(leftWheelPWM);
 
     // Check for corners
-    int same = all_same()
+    int same = all_same();
+    Serial.print("same: ");
+    Serial.println(same);
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
        * then if there is white on the right, turn right
        * else if there is white on the left, turn left
       */
-      turnCorner(/* Arguments */);
-    }
+      if(same == 1){
+        turnCorner(/* right */);
+        Serial.println("right");
+      }
 
+      else{
+        while(all_same() != 0){
+          Serial.println("back");
+          readADC();
+          printADC();
+          // M1_backward(50);
+          // M2_backward(50);
+          // delay(0.1);
+          // M1_stop();
+          // M2_stop();
+        }
+
+        Serial.println("turn");
+        readADC();
+        printADC();
+
+        if(adc1_buf[1] == 1 && adc2_buf[1] == 1){
+          turnCorner(/* right */);
+          Serial.println("right");
+          delay(100);
+        }
+
+        else{
+          turnCorner(/* left */);
+          Serial.println("left");
+          delay(100);
+        }
+      }
+    }
+    delay(5);
   }
 }
