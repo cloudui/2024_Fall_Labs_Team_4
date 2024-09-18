@@ -277,25 +277,35 @@ void loop() {
           // delay(0.1);
           // M1_stop();
           // M2_stop();
+          delay(1000);
         }
 
         Serial.println("turn");
         readADC();
         printADC();
 
-        if(adc1_buf[1] == 1 && adc2_buf[1] == 1){
+        int turn = 1;
+        for(int i = 0; i < 3; i++){
+          if(adc1_buf[i] == 1 || adc2_buf[i] == 1){
+            turn = 0;
+          }
+        }
+        Serial.print("turn: ");
+        Serial.println(turn);
+
+        if(turn == 0){
           turnCorner(/* right */);
           Serial.println("right");
-          delay(100);
+          delay(1000);
         }
 
         else{
           turnCorner(/* left */);
           Serial.println("left");
-          delay(100);
+          delay(1000);
         }
       }
     }
-    delay(5);
+    delay(1000);
   }
 }
