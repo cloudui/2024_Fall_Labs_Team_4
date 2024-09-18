@@ -109,14 +109,14 @@ int32_t all_same(){
 void digitalConvert() {
   int threshold = 700;
   for (int i = 0; i < 7; i++) {
-    if (adc1_buf[i]>threshold) {
+    if (adc1.readADC(i)>threshold) {
       lineArray[2*i] = 0; 
     } else {
       lineArray[2*i] = 1;
     }
 
     if (i<6) {
-      if (adc2_buf[i]>threshold){
+      if (adc2.readADC(i)>threshold){
         lineArray[2*i+1] = 0;
       } else {
         lineArray[2*i+1] = 1;
@@ -124,9 +124,9 @@ void digitalConvert() {
     }
 
     // print line sensor position
-    // for(int i = 0; i < 13; i++) {
-    //   Serial.print(lineArray[2*i+1]); Serial.print(" ");
-    // }
+    for(int i = 0; i < 13; i++) {
+      Serial.print(lineArray[i]); Serial.print(" ");
+    }
   }
 }
 
@@ -138,6 +138,11 @@ float getPosition(/* Arguments */) {
    * this function returns a value between 0-12 for where the sensor thinks 
    * the center of line is (6 being the middle)
    */
+  if (lineArray[position] == 1){
+    Serial.println("In pos");
+  } else{
+    Serial.println("Not in pos");
+  }
   return position;
 }
 
@@ -233,7 +238,7 @@ void loop() {
     float pos;
 
     readADC();
-    printADC();
+    // printADC();
     digitalConvert();
     Serial.println("forward");
 
