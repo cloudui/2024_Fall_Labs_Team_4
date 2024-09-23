@@ -50,9 +50,9 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp;
-float Kd;
-float Ki;
+float Kp = 1;
+float Kd = 1;
+float Ki = 1;
 
 
 /*
@@ -246,13 +246,14 @@ void loop() {
     
     // Define the PID errors
     e = 1;
-    d_e = 1; 
+    d_e = 1;
     total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = 150;
-    rightWheelPWM = PWM_MAX - u;
-    leftWheelPWM = PWM_MAX + u;
+    int base_pwm = 50;
+    u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
+    rightWheelPWM = base_pwm - u;
+    leftWheelPWM = base_pwm + u;
 
     // M1_forward(rightWheelPWM);
     // M2_forward(leftWheelPWM);
