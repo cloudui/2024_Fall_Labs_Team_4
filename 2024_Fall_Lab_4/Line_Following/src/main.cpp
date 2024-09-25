@@ -131,20 +131,22 @@ void digitalConvert() {
 }
 
 // Calculate robot's position on the line 
-float getPosition(/* Arguments */) {
-  int position = 6;
-  /* Using lineArray[], which is an array of 13 Boolean values representing 1 
-   * if the line sensor reads a white surface and 0 for a dark surface, 
-   * this function returns a value between 0-12 for where the sensor thinks 
-   * the center of line is (6 being the middle)
-   */
-  if (lineArray[position] == 1){
-    Serial.println("In pos");
-  } else{
-    Serial.println("Not in pos");
-  }
-  return position;
+float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
+    int position = 6;
+    int count = 0;
+    float sum = 0;
+    for (int i = 0; i < 13; i++) {
+        if (lineArray[i] == 1) {
+            sum += i;  
+            count++;         
+        }
+    }
+    if (count == 0) {
+        return 6.0;
+    }
+    return position = sum/count;
 }
+
 
 /*
  *  Movement functions
@@ -242,7 +244,7 @@ void loop() {
     digitalConvert();
     Serial.println("forward");
 
-    pos = getPosition(/* Arguments */);
+    pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
     
     // Define the PID errors
     e = 1;
