@@ -245,6 +245,8 @@ void loop() {
     Serial.println("forward");
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+    Serial.print(pos);
+    delay(1000);
     
     // Define the PID errors
     e = 1;
