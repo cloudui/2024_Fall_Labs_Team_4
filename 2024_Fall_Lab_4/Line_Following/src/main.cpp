@@ -132,7 +132,6 @@ void digitalConvert() {
 
 // Calculate robot's position on the line 
 float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
-    int position = 6;
     int count = 0;
     float sum = 0;
     for (int i = 0; i < 13; i++) {
@@ -144,7 +143,7 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
     if (count == 0) {
         return 6.0;
     }
-    return position = sum/count;
+    return sum/count;
 }
 
 
@@ -245,7 +244,7 @@ void loop() {
     Serial.println("forward");
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
-    Serial.print(pos);
+    Serial.println("Pos is "); Serial.println(pos);
     delay(1000);
     
     // Define the PID errors
