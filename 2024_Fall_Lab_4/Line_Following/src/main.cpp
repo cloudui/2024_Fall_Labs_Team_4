@@ -60,9 +60,9 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp;
-float Kd;
-float Ki;
+float Kp = 1;
+float Kd = 1;
+float Ki = 1;
 
 
 /*
@@ -90,17 +90,28 @@ void readADC() {
     else{
       adc2_buf[i] = 1;
     }
+  }
+}
 
-    //adc1_buf[i] = adc1.readADC(i);
-    //adc2_buf[i] = adc2.readADC(i);
-
-    if (i<7) {
-      Serial.print(adc1_buf[i]); Serial.print("\t");
+int32_t all_same(){
+  if(adc1_buf[0] == 1){
+    for(int i = 0; i < 8; i++) {
+      if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
+        return 0;
+      }
     }
 
-    if (i<6) {
-      Serial.print(adc2_buf[i]); Serial.print("\t");
+    return 1;
+  }
+
+  else{
+    for(int i = 0; i < 8; i++) {
+      if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
+        return 0;
+      }
     }
+
+    return 2;
   }
 }
 
@@ -108,14 +119,14 @@ void readADC() {
 void digitalConvert() {
   int threshold = 700;
   for (int i = 0; i < 7; i++) {
-    if (adc1_buf[i]>threshold) {
+    if (adc1.readADC(i)>threshold) {
       lineArray[2*i] = 0; 
     } else {
       lineArray[2*i] = 1;
     }
 
     if (i<6) {
-      if (adc2_buf[i]>threshold){
+      if (adc2.readADC(i)>threshold){
         lineArray[2*i+1] = 0;
       } else {
         lineArray[2*i+1] = 1;
@@ -123,14 +134,14 @@ void digitalConvert() {
     }
 
     // print line sensor position
-    // for(int i = 0; i < 13; i++) {
-    //   Serial.print(lineArray[2*i+1]); Serial.print(" ");
-    // }
+    for(int i = 0; i < 13; i++) {
+      Serial.print(lineArray[i]); Serial.print(" ");
+    }
   }
 }
 
 // Calculate robot's position on the line 
-float getPosition() {
+float getPositionSweep() {
   int position = 6;
   /* Using lineArray[], which is an array of 13 Boolean values representing 1 
    * if the line sensor reads a white surface and 0 for a dark surface, 
@@ -156,6 +167,22 @@ float getPosition() {
   position = (first + last) / 2;
   return position;
 }
+
+float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
+    int count = 0;
+    float sum = 0;
+    for (int i = 0; i < 13; i++) {
+        if (lineArray[i] == 1) {
+            sum += i;  
+            count++;         
+        }
+    }
+    if (count == 0) {
+        return 6.0;
+    }
+    return sum/count;
+}
+
 
 /*
  *  Movement functions
@@ -223,6 +250,19 @@ void turnCorner(bool clockwise, int rotation_pwm) {
   M2_stop();
 
   delay(10000);
+}
+
+void printADC(){
+  for (int i = 0; i < 8; i++) {
+    if (i<7) {
+      Serial.print(adc1_buf[i]); Serial.print("\t");
+    }
+
+    if (i<6) {
+      Serial.print(adc2_buf[i]); Serial.print("\t");
+    }
+  }
+  Serial.println("");
 }
 
 /*
@@ -354,27 +394,100 @@ void loop() {
     float pos;
 
     readADC();
+    // printADC();
     digitalConvert();
+    Serial.println("forward");
 
-    pos = getPosition(/* Arguments */);
+    pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+    Serial.println("Pos is "); Serial.println(pos);
+    delay(1000);
     
     // Define the PID errors
-    // e = ;
-    // d_e = ; 
-    // total_e= ;
+    e = 1;
+    d_e = 1;
+    total_e = 1;
 
-    // // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    // u = ;
-    // rightWheelPWM = ;
-    // leftWheelPWM = ;
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    int base_pwm = 100;
+    u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
+    rightWheelPWM = base_pwm - u;
+    leftWheelPWM = base_pwm + u;
 
-    // M1_forward(rightWheelPWM);
-    // M2_forward(leftWheelPWM);
+    M1_forward(base_pwm); //rightWheelPWM);
+    M2_forward(base_pwm); //leftWheelPWM);
 
-    // // Check for corners
-    // if(/* Condition for corner */) {
-    //   turnCorner(/* Arguments */);
-    // }
+    // Check for corners
+    int same = all_same();
+    Serial.print("same: ");
+    Serial.println(same);
+    if(same > 0) {
+      /* if all same indicates all white, then turn right
+       * else back up until it detects both black and white
+       * then if there is white on the right, turn right
+       * else if there is white on the left, turn left
+      */
+      M1_stop();
+      M2_stop();
 
+      if(same == 1){
+        turnCorner(/* right */);
+        Serial.println("right");
+        M1_backward(rightWheelPWM);
+        M2_forward(leftWheelPWM);
+        delay(1000);
+        M1_stop();
+        M2_stop();
+      }
+
+      else{
+        while(all_same() != 0){
+          Serial.println("back");
+          readADC();
+          printADC();
+          M1_backward(base_pwm);
+          M2_backward(base_pwm);
+          delay(1000);
+          M1_stop();
+          M2_stop();
+          delay(100);
+        }
+
+        Serial.println("turn");
+        readADC();
+        printADC();
+
+        int turn = 1;
+        for(int i = 0; i < 3; i++){
+          if(adc1_buf[i] == 1 || adc2_buf[i] == 1){
+            turn = 0;
+          }
+        }
+        Serial.print("turn: ");
+        Serial.println(turn);
+
+        if(turn == 0){
+          turnCorner(/* right */);
+          Serial.println("right");
+          M1_backward(rightWheelPWM);
+          M2_forward(leftWheelPWM);
+          delay(1000);
+          M1_stop();
+          M2_stop();
+        }
+
+        else{
+          turnCorner(/* left */);
+          Serial.println("left");
+          rightWheelPWM = base_pwm + u;
+          leftWheelPWM = base_pwm - u;
+          M1_forward(rightWheelPWM);
+          M2_backward(leftWheelPWM);
+          delay(1000);
+          M1_stop();
+          M2_stop();
+        }
+      }
+    }
+    delay(100);
   }
 }
