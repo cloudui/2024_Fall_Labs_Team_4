@@ -252,13 +252,13 @@ void loop() {
     total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    int base_pwm = 50;
+    int base_pwm = 100;
     u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
     rightWheelPWM = base_pwm - u;
     leftWheelPWM = base_pwm + u;
 
-    // M1_forward(rightWheelPWM);
-    // M2_forward(leftWheelPWM);
+    M1_forward(base_pwm); //rightWheelPWM);
+    M2_forward(base_pwm); //leftWheelPWM);
 
     // Check for corners
     int same = all_same();
@@ -270,9 +270,17 @@ void loop() {
        * then if there is white on the right, turn right
        * else if there is white on the left, turn left
       */
+      M1_stop();
+      M2_stop();
+
       if(same == 1){
         turnCorner(/* right */);
         Serial.println("right");
+        M1_backward(rightWheelPWM);
+        M2_forward(leftWheelPWM);
+        delay(1000);
+        M1_stop();
+        M2_stop();
       }
 
       else{
@@ -280,12 +288,12 @@ void loop() {
           Serial.println("back");
           readADC();
           printADC();
-          // M1_backward(50);
-          // M2_backward(50);
-          // delay(0.1);
-          // M1_stop();
-          // M2_stop();
+          M1_backward(base_pwm);
+          M2_backward(base_pwm);
           delay(1000);
+          M1_stop();
+          M2_stop();
+          delay(100);
         }
 
         Serial.println("turn");
@@ -304,16 +312,26 @@ void loop() {
         if(turn == 0){
           turnCorner(/* right */);
           Serial.println("right");
+          M1_backward(rightWheelPWM);
+          M2_forward(leftWheelPWM);
           delay(1000);
+          M1_stop();
+          M2_stop();
         }
 
         else{
           turnCorner(/* left */);
           Serial.println("left");
+          rightWheelPWM = base_pwm + u;
+          leftWheelPWM = base_pwm - u;
+          M1_forward(rightWheelPWM);
+          M2_backward(leftWheelPWM);
           delay(1000);
+          M1_stop();
+          M2_stop();
         }
       }
     }
-    delay(1000);
+    delay(100);
   }
 }
