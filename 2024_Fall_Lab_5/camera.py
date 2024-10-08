@@ -3,7 +3,7 @@ import time
 import matplotlib.pyplot as plt
 
 cam = cv2.VideoCapture(0)
-i = 0
+i = 0 #too dark on first capture
 
 while(True):
     result, face_image = cam.read()
