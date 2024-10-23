@@ -206,12 +206,12 @@ void M2_backward(int pwm_value) {
 }
 
 void M1_stop() {
-  ledcWrite(M1_IN_1_CHANNEL, PWM_MAX);
-  ledcWrite(M1_IN_2_CHANNEL, PWM_MAX);
+  ledcWrite(M1_IN_1_CHANNEL, 0);
+  ledcWrite(M1_IN_2_CHANNEL, 0);
 }
 void M2_stop() {
-  ledcWrite(M2_IN_1_CHANNEL, PWM_MAX);
-  ledcWrite(M2_IN_2_CHANNEL, PWM_MAX);
+  ledcWrite(M2_IN_1_CHANNEL, 0);
+  ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
 void turnCorner(bool clockwise, int rotation_pwm) {
@@ -225,7 +225,7 @@ void turnCorner(bool clockwise, int rotation_pwm) {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
   float angle_traveled = 0;
-  int rotation_speed = PWM_MAX / 3;
+  int rotation_speed = rotation_pwm;
   float DEG_90 = 1.25; // 90 degrees in radians
   
 
@@ -408,7 +408,7 @@ void loop() {
     total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    int base_pwm = 100;
+    int base_pwm = 110;
     u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
     rightWheelPWM = base_pwm - u;
     leftWheelPWM = base_pwm + u;
@@ -430,7 +430,7 @@ void loop() {
       M2_stop();
 
       if(same == 1){
-        turnCorner(/* right */);
+        turnCorner(1,base_pwm);
         Serial.println("right");
         M1_backward(rightWheelPWM);
         M2_forward(leftWheelPWM);
@@ -449,7 +449,7 @@ void loop() {
           delay(1000);
           M1_stop();
           M2_stop();
-          delay(100);
+          delay(3000);
         }
 
         Serial.println("turn");
@@ -466,7 +466,7 @@ void loop() {
         Serial.println(turn);
 
         if(turn == 0){
-          turnCorner(/* right */);
+          turnCorner(0,base_pwm);
           Serial.println("right");
           M1_backward(rightWheelPWM);
           M2_forward(leftWheelPWM);
@@ -476,7 +476,7 @@ void loop() {
         }
 
         else{
-          turnCorner(/* left */);
+          turnCorner(1,base_pwm);
           Serial.println("left");
           rightWheelPWM = base_pwm + u;
           leftWheelPWM = base_pwm - u;
