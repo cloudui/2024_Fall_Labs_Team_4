@@ -430,13 +430,24 @@ void loop() {
       M2_stop();
 
       if(same == 1){
+        M1_forward(base_pwm);
+        M2_forward(base_pwm);
+        delay(500);
+        M1_stop();
+        M2_stop();
+        delay(3000);
         turnCorner(1,base_pwm);
         Serial.println("right");
-        M1_backward(rightWheelPWM);
-        M2_forward(leftWheelPWM);
         delay(1000);
         M1_stop();
         M2_stop();
+        delay(3000);
+        M1_forward(base_pwm);
+        M2_forward(base_pwm);
+        delay(1000);
+        M1_stop();
+        M2_stop();
+        delay(3000);
       }
 
       else{
@@ -473,6 +484,7 @@ void loop() {
           delay(1000);
           M1_stop();
           M2_stop();
+          delay(3000);
         }
 
         else{
@@ -485,6 +497,7 @@ void loop() {
           delay(1000);
           M1_stop();
           M2_stop();
+          delay(3000);
         }
       }
     }
