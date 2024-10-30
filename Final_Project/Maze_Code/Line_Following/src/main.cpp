@@ -6,6 +6,7 @@
 #include <Adafruit_Sensor.h>
 
 
+#define DT 100
 // IMU
 Adafruit_MPU6050 mpu;
 
@@ -56,6 +57,7 @@ const int base_pid = 80; // Base speed for robot
 const float mid = 6;
 
 float e;
+float p_e;
 float d_e;
 float total_e;
 
@@ -140,41 +142,13 @@ void digitalConvert() {
   }
 }
 
-// Calculate robot's position on the line 
-float getPositionSweep() {
-  int position = 6;
-  /* Using lineArray[], which is an array of 13 Boolean values representing 1 
-   * if the line sensor reads a white surface and 0 for a dark surface, 
-   * this function returns a value between 0-12 for where the sensor thinks 
-   * the center of line is (6 being the middle)
-   */
-  int first = 0;
-  int last = 12;
-
-  for (int i = 0; i < 13; i++) {
-    if (lineArray[i] == 1) {
-      first = i;
-      break;
-    }
-  }
-
-  for (int i = 12; i >= 0; i--) {
-    if (lineArray[i] == 1) {
-      last = i;
-      break;
-    }
-  }
-  position = (first + last) / 2;
-  return position;
-}
-
 float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
     int count = 0;
     float sum = 0;
     for (int i = 0; i < 13; i++) {
         if (lineArray[i] == 1) {
-            sum += i;  
-            count++;         
+          sum += i;  
+          count++;         
         }
     }
     if (count == 0) {
@@ -187,6 +161,20 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
 /*
  *  Movement functions
  */
+
+void move(int left, int right) {
+  M1_forward(left);
+  M2_forward(right);
+}
+
+int constrain(int value) {
+  if (value > 255) {
+    return 255;
+  } else if (value < -255) {
+    return -255;
+  }
+}
+
 void M1_forward(int pwm_value) {
   ledcWrite(M1_IN_1_CHANNEL, 0);
   ledcWrite(M1_IN_2_CHANNEL, pwm_value);
@@ -383,7 +371,6 @@ void setup() {
 
 void loop() {
 
-
   Encoder enc1(M1_ENC_A, M1_ENC_B);
   Encoder enc2(M2_ENC_A, M2_ENC_B);
 
@@ -403,18 +390,22 @@ void loop() {
     delay(1000);
     
     // Define the PID errors
-    e = 1;
-    d_e = 1;
-    total_e = 1;
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
     int base_pwm = 110;
     u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
-    rightWheelPWM = base_pwm - u;
-    leftWheelPWM = base_pwm + u;
 
-    M1_forward(base_pwm); //rightWheelPWM);
-    M2_forward(base_pwm); //leftWheelPWM);
+    leftWheelPWM = constrain(base_pwm - u);
+    rightWheelPWM = constrain(base_pwm + u);
+    
+    move(leftWheelPWM, rightWheelPWM);
+
 
     // Check for corners
     int same = all_same();
@@ -501,6 +492,6 @@ void loop() {
         }
       }
     }
-    delay(100);
+    delay(DT);
   }
 }
