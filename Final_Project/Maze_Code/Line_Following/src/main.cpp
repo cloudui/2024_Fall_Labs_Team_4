@@ -247,12 +247,6 @@ void turnCorner(bool clockwise, int rotation_pwm) {
     Serial.println(angle_traveled);
     delay(10);
   }
-
-  // Stop the robot
-  M1_stop();
-  M2_stop();
-
-  delay(10000);
 }
 
 void printADC(){
@@ -451,11 +445,11 @@ void loop() {
         Serial.println("I have gotten to same = 1");
         M1_forward(base_pwm);
         M2_forward(base_pwm);
-        delay(100);
+        delay(250);
         M1_stop();
         M2_stop();
         delay(500);
-        turnCorner(1,base_pwm-20);
+        turnCorner(1,100); //pwm = 100
         Serial.println("right");
         delay(100);
         M1_stop();
@@ -463,7 +457,7 @@ void loop() {
         delay(500);
         M1_forward(base_pwm);
         M2_forward(base_pwm);
-        delay(100);
+        delay(250);
         M1_stop();
         M2_stop();
         delay(500);
@@ -496,10 +490,8 @@ void loop() {
         Serial.println(turn);
 
         if(turn == 0){
-          turnCorner(0,base_pwm);
+          turnCorner(1,100);
           Serial.println("right");
-          M1_backward(rightWheelPWM);
-          M2_forward(leftWheelPWM);
           delay(100);
           M1_stop();
           M2_stop();
@@ -507,12 +499,8 @@ void loop() {
         }
 
         else{
-          turnCorner(1,base_pwm);
+          turnCorner(0,100);
           Serial.println("left");
-          rightWheelPWM = base_pwm + u;
-          leftWheelPWM = base_pwm - u;
-          M1_forward(rightWheelPWM);
-          M2_backward(leftWheelPWM);
           delay(100);
           M1_stop();
           M2_stop();
