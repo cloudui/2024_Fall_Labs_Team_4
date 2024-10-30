@@ -190,10 +190,13 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
 void M1_forward(int pwm_value) {
   ledcWrite(M1_IN_1_CHANNEL, 0);
   ledcWrite(M1_IN_2_CHANNEL, pwm_value);
+  Serial.println("I got to M1FWD ");
+
 }
 void M2_forward(int pwm_value) {
   ledcWrite(M2_IN_1_CHANNEL, 0);
   ledcWrite(M2_IN_2_CHANNEL, pwm_value);
+  Serial.println("I got to M2FWD ");
 }
 
 void M1_backward(int pwm_value) {
@@ -291,13 +294,6 @@ void setup() {
   M2_stop();
 
   // IMU Stop
-
-  // Stop the right motor by setting pin 14 low
-  // this pin floats high or is pulled
-  // high during the bootloader phase for some reason
-  pinMode(14, OUTPUT);
-  digitalWrite(14, LOW);
-  delay(100);
   
   while (!Serial)
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
@@ -387,6 +383,8 @@ void loop() {
   Encoder enc1(M1_ENC_A, M1_ENC_B);
   Encoder enc2(M2_ENC_A, M2_ENC_B);
 
+
+
   while(true) {
     int u;
     int rightWheelPWM;
@@ -408,13 +406,33 @@ void loop() {
     total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    int base_pwm = 110;
+    int base_pwm = 120;
     u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
     rightWheelPWM = base_pwm - u;
     leftWheelPWM = base_pwm + u;
-
-    M1_forward(base_pwm); //rightWheelPWM);
-    M2_forward(base_pwm); //leftWheelPWM);
+    if(pos > 7){
+      M2_forward(base_pwm); //leftWheelPWM;
+      M1_stop(); //rightWheelSTOP;
+      delay(100);
+      M2_stop();
+      delay(500);
+    }
+    else if (pos < 5){
+      M1_forward(base_pwm); //rightWheelPWM);
+      M2_stop(); //leftWheelSTOP;
+      delay(100);
+      M1_stop();
+      delay(500);
+      
+    }
+    else{
+      M1_forward(base_pwm); //leftWheelPWM;
+      M2_forward(base_pwm); //rightWheelPWM);
+      delay(100);
+      M1_stop();
+      M2_stop();
+      delay(500);
+    }
 
     // Check for corners
     int same = all_same();
@@ -430,24 +448,25 @@ void loop() {
       M2_stop();
 
       if(same == 1){
+        Serial.println("I have gotten to same = 1");
         M1_forward(base_pwm);
         M2_forward(base_pwm);
+        delay(100);
+        M1_stop();
+        M2_stop();
         delay(500);
-        M1_stop();
-        M2_stop();
-        delay(3000);
-        turnCorner(1,base_pwm);
+        turnCorner(1,base_pwm-20);
         Serial.println("right");
-        delay(1000);
+        delay(100);
         M1_stop();
         M2_stop();
-        delay(3000);
+        delay(500);
         M1_forward(base_pwm);
         M2_forward(base_pwm);
-        delay(1000);
+        delay(100);
         M1_stop();
         M2_stop();
-        delay(3000);
+        delay(500);
       }
 
       else{
@@ -457,10 +476,10 @@ void loop() {
           printADC();
           M1_backward(base_pwm);
           M2_backward(base_pwm);
-          delay(1000);
+          delay(100);
           M1_stop();
           M2_stop();
-          delay(3000);
+          delay(500);
         }
 
         Serial.println("turn");
@@ -481,10 +500,10 @@ void loop() {
           Serial.println("right");
           M1_backward(rightWheelPWM);
           M2_forward(leftWheelPWM);
-          delay(1000);
+          delay(100);
           M1_stop();
           M2_stop();
-          delay(3000);
+          delay(500);
         }
 
         else{
@@ -494,10 +513,10 @@ void loop() {
           leftWheelPWM = base_pwm - u;
           M1_forward(rightWheelPWM);
           M2_backward(leftWheelPWM);
-          delay(1000);
+          delay(100);
           M1_stop();
           M2_stop();
-          delay(3000);
+          delay(500);
         }
       }
     }
