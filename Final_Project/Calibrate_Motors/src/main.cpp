@@ -20,10 +20,27 @@ const unsigned int M2_IN_2_CHANNEL = 11;
 const unsigned int M1_I_SENSE = 35;
 const unsigned int M2_I_SENSE = 34;
 
-const unsigned int PWM_VALUE = 150; // Max PWM given 8 bit resolution
+const unsigned int PWM_VALUE = 130; // Max PWM given 8 bit resolution
 
 const int freq = 5000;
 const int resolution = 8;
+
+int change(long diff){
+  int amount_change = 0;
+  int interval = 50;
+
+  while(true){
+    if(diff > interval){
+      amount_change += 1;
+    }
+
+    else{
+      return amount_change;
+    }
+
+    interval += 50;
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -53,8 +70,6 @@ void loop() {
   long enc2_value = enc2.read();
   int m1_pwm = PWM_VALUE;
   int m2_pwm = PWM_VALUE;
-  int m1 = 0;
-  int m2 = 0;
 
   while(true) {
     Serial.println(enc1_value);
@@ -66,7 +81,7 @@ void loop() {
     ledcWrite(M2_IN_1_CHANNEL, m2_pwm);
     ledcWrite(M2_IN_2_CHANNEL, 0);
 
-    delay(1000);
+    delay(2125);
 
     ledcWrite(M1_IN_1_CHANNEL, 0);
     ledcWrite(M1_IN_2_CHANNEL, 0);
@@ -87,22 +102,33 @@ void loop() {
     Serial.println(m2_pwm);
     Serial.println("");
 
-    if (diff_one > diff_two + 100){
-      if(m2 == 1){
-        m2_pwm += 2;
+    long diff = abs(diff_one - diff_two);
+
+    if(diff > 50){
+      int amount_change = change(diff);
+      if (diff_one > diff_two){
+        m1_pwm -= amount_change/2;
+        m2_pwm += amount_change/2;
       }
       else{
-        m1_pwm -= 10;
-        m1 = 1;
+        m2_pwm -= amount_change/2;
+        m1_pwm += amount_change/2;
       }
-    }
-    else if (diff_one + 100 < diff_two){
-      if(m1 == 1){
-        m1_pwm += 2;
+
+      if(m1_pwm < 100){
+        m1_pwm = 100;
       }
-      else{
-        m2_pwm -= 10;
-        m2 = 1;
+      
+      if(m2_pwm < 100){
+        m2_pwm = 100;
+      }
+
+      if(m1_pwm > 200){
+        m1_pwm = 200;
+      }
+
+      if(m2_pwm > 200){
+        m2_pwm = 200;
       }
     }
 
