@@ -56,13 +56,14 @@ const int base_pid = 80; // Base speed for robot
 const float mid = 6;
 
 float e;
+float p_e;
 float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp = 1;
-float Kd = 1;
-float Ki = 1;
+float Kp = 1.;
+float Kd = 0.1;
+float Ki = 0;
 
 
 /*
@@ -401,38 +402,61 @@ void loop() {
     delay(1000);
     
     // Define the PID errors
-    e = 1;
-    d_e = 1;
-    total_e = 1;
+
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    int base_pwm = 75;
+    u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
     int base_pwm = 110;
-    u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
-    rightWheelPWM = 150;
-    leftWheelPWM = 136;
-    if(pos > 8){
-      M2_forward(rightWheelPWM); //leftWheelPWM;
-      M1_stop(); //rightWheelSTOP;
-      delay(100);
-      M2_stop();
-      delay(400);
+
+    rightWheelPWM = 150 - u;
+    leftWheelPWM = 136 + u;
+
+    // Constrain the PWM values
+    if (rightWheelPWM < 0) {
+      rightWheelPWM = 0;
+    } else if (rightWheelPWM > PWM_MAX) {
+      rightWheelPWM = PWM_MAX;
     }
-    else if (pos < 4){
-      M1_forward(leftWheelPWM); //rightWheelPWM);
-      M2_stop(); //leftWheelSTOP;
-      delay(100);
-      M1_stop();
-      delay(400);
+
+    if (leftWheelPWM < 0) {
+      leftWheelPWM = 0;
+    } else if (leftWheelPWM > PWM_MAX) {
+      leftWheelPWM = PWM_MAX;
+    }
+
+    // if(pos > 8){
+    //   M2_forward(rightWheelPWM); //leftWheelPWM;
+    //   M1_stop(); //rightWheelSTOP;
+    //   delay(100);
+    //   M2_stop();
+    //   delay(400);
+    // }
+    // else if (pos < 4){
+    //   M1_forward(leftWheelPWM); //rightWheelPWM);
+    //   M2_stop(); //leftWheelSTOP;
+    //   delay(100);
+    //   M1_stop();
+    //   delay(400);
       
-    }
-    else{
+    // }
+    // else{
       M1_forward(leftWheelPWM); //leftWheelPWM;
       M2_forward(rightWheelPWM); //rightWheelPWM);
       delay(100);
       M1_stop();
       M2_stop();
       delay(250);
-    }
+    // }
 
     // Check for corners
     int same = all_same();
