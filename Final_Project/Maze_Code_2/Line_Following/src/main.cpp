@@ -5,7 +5,6 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
-//hello
 // IMU
 Adafruit_MPU6050 mpu;
 
@@ -15,9 +14,6 @@ const unsigned int ADC_2_CS = 17;
 // ADC (line sensor)
 Adafruit_MCP3008 adc1;
 Adafruit_MCP3008 adc2;
-
-// const unsigned int ADC_1_CS = 2;
-// const unsigned int ADC_2_CS = 17;
 
 int adc1_buf[8];
 int adc2_buf[8];
@@ -52,9 +48,6 @@ const int resolution = 8; // 8-bit resolution -> PWM values go from 0-255
 const int ledChannel = 0;
 
 // PID
-const int base_pid = 80; // Base speed for robot
-const float mid = 6;
-
 float e;
 float d_e;
 float total_e;
@@ -64,27 +57,21 @@ float Kp = 1;
 float Kd = 1;
 float Ki = 1;
 
+const float mid = 6;
 
 /*
  *  Line sensor functions
  */
-// void readADC() {
-//   for (int i = 0; i < 8; i++) {
-//     adc1_buf[i] = adc1.readADC(i);
-//     adc2_buf[i] = adc2.readADC(i);
-//   }
-// }
-
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    if (adc1.readADC(i) > 700){
+    if (adc1.readADC(i) > 690){
       adc1_buf[i] = 0;
     }
     else{
       adc1_buf[i] = 1;
     }
 
-    if (adc2.readADC(i) > 700){
+    if (adc2.readADC(i) > 690){
       adc2_buf[i] = 0;
     }
     else{
@@ -217,42 +204,24 @@ void M2_stop() {
   ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
-void turnCorner(bool clockwise, int rotation_pwm) {
-  /* 
-   * Use the encoder readings to turn the robot 90 degrees clockwise or 
-   * counterclockwise depending on the argument. You can calculate when the 
-   * robot has turned 90 degrees using either the IMU or the encoders + wheel measurements
-   */
-  
-  /* Get new sensor events with the readings */
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
-  float angle_traveled = 0;
-  int rotation_speed = rotation_pwm;
-  float DEG_90 = 1.25; // 90 degrees in radians
-  
-
+void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
   if (clockwise) {
-    M1_forward(rotation_speed);
-    M2_backward(rotation_speed);
-  } else {
-    M1_backward(rotation_speed);
-    M2_forward(rotation_speed);
+    M1_forward(left_wheel);
+    M2_backward(right_wheel);
+  } 
+  
+  else {
+    M1_backward(left_wheel);
+    M2_forward(right_wheel);
   }
 
-  while ((clockwise && angle_traveled > -DEG_90) || (!clockwise && angle_traveled < DEG_90)) {
-    mpu.getEvent(&a, &g, &temp);
-    angle_traveled += g.gyro.z * 0.01; // 0.01 is the time interval in seconds
-    Serial.print("Angle traveled: ");
-    Serial.println(angle_traveled);
-    delay(10);
-  }
+  delay(130);
 
   // Stop the robot
   M1_stop();
   M2_stop();
 
-  delay(10000);
+  delay(1000);
 }
 
 void printADC(){
@@ -398,7 +367,7 @@ void loop() {
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
     Serial.println("Pos is "); Serial.println(pos);
-    delay(1000);
+    delay(100);
     
     // Define the PID errors
     e = 1;
@@ -406,38 +375,57 @@ void loop() {
     total_e = 1;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    int base_pwm = 110;
     u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
+    
     rightWheelPWM = 150;
     leftWheelPWM = 136;
-    if(pos > 8){
-      M2_forward(rightWheelPWM); //leftWheelPWM;
-      M1_stop(); //rightWheelSTOP;
-      delay(100);
+
+    // M1_forward(leftWheelPWM); 
+    // M2_forward(rightWheelPWM);
+    // delay(100);
+    // M1_stop();
+    // M2_stop();
+    // delay(400);
+
+    // turnCorner(1, rightWheelPWM, leftWheelPWM); //right
+
+    // M1_forward(leftWheelPWM); 
+    // M2_forward(rightWheelPWM);
+    // delay(100);
+    // M1_stop();
+    // M2_stop();
+    // delay(400);
+
+    // turnCorner(0, rightWheelPWM, leftWheelPWM); //left
+
+    if(pos > 9){
+      M2_forward(rightWheelPWM); 
+      M1_stop();
+      delay(50);
       M2_stop();
       delay(400);
     }
-    else if (pos < 4){
-      M1_forward(leftWheelPWM); //rightWheelPWM);
-      M2_stop(); //leftWheelSTOP;
-      delay(100);
+    else if(pos < 3){
+      M1_forward(leftWheelPWM);
+      M2_stop();
+      delay(50);
       M1_stop();
-      delay(400);
-      
+      delay(400);     
     }
     else{
-      M1_forward(leftWheelPWM); //leftWheelPWM;
-      M2_forward(rightWheelPWM); //rightWheelPWM);
+      M1_forward(leftWheelPWM); 
+      M2_forward(rightWheelPWM);
       delay(100);
       M1_stop();
       M2_stop();
-      delay(250);
+      delay(400);
     }
 
     // Check for corners
     int same = all_same();
     Serial.print("same: ");
     Serial.println(same);
+    readADC();
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
@@ -449,42 +437,40 @@ void loop() {
 
       if(same == 1){
         Serial.println("I have gotten to same = 1");
-        M1_forward(base_pwm);
-        M2_forward(base_pwm);
+        M1_forward(leftWheelPWM);
+        M2_forward(rightWheelPWM);
         delay(100);
         M1_stop();
         M2_stop();
-        delay(500);
-        turnCorner(1,base_pwm-20);
+        delay(400);
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
         Serial.println("right");
+        M1_forward(leftWheelPWM);
+        M2_forward(rightWheelPWM);
         delay(100);
         M1_stop();
         M2_stop();
-        delay(500);
-        M1_forward(base_pwm);
-        M2_forward(base_pwm);
-        delay(100);
-        M1_stop();
-        M2_stop();
-        delay(500);
+        delay(400);
       }
 
       else{
-        while(all_same() != 0){
-          Serial.println("back");
-          readADC();
-          printADC();
-          M1_backward(base_pwm);
-          M2_backward(base_pwm);
-          delay(100);
-          M1_stop();
-          M2_stop();
-          delay(500);
-        }
+        // while(all_same() != 0){
+        //   Serial.println("back");
+        //   readADC();
+        //   printADC();
+
+        //   if(all_same() != 0){ //check again because delay
+        //     M1_backward(leftWheelPWM);
+        //     M2_backward(rightWheelPWM);
+        //     delay(100);
+        //   }
+
+        //   M1_stop();
+        //   M2_stop();
+        //   delay(1000);
+        // }
 
         Serial.println("turn");
-        readADC();
-        printADC();
 
         int turn = 1;
         for(int i = 0; i < 3; i++){
@@ -495,31 +481,45 @@ void loop() {
         Serial.print("turn: ");
         Serial.println(turn);
 
+        // M1_forward(leftWheelPWM); 
+        // M2_forward(rightWheelPWM);
+        // delay(100);
+        // M1_stop();
+        // M2_stop();
+        // delay(1000);
+
         if(turn == 0){
-          turnCorner(0,base_pwm);
+          turnCorner(0, rightWheelPWM, leftWheelPWM);
           Serial.println("right");
-          M1_backward(rightWheelPWM);
-          M2_forward(leftWheelPWM);
-          delay(100);
-          M1_stop();
-          M2_stop();
-          delay(500);
         }
 
         else{
-          turnCorner(1,base_pwm);
+          turnCorner(1, rightWheelPWM, leftWheelPWM);
           Serial.println("left");
-          rightWheelPWM = base_pwm + u;
-          leftWheelPWM = base_pwm - u;
-          M1_forward(rightWheelPWM);
-          M2_backward(leftWheelPWM);
-          delay(100);
+        }
+      }
+
+      readADC();
+      pos = getPosition(lineArray);
+      while(pos > 8 || pos < 4){
+        pos = getPosition(lineArray);
+        if(pos > 8){
+          M2_forward(rightWheelPWM); 
           M1_stop();
+          delay(50);
           M2_stop();
-          delay(500);
+          delay(400);
+        }
+        else if(pos < 4){
+          M1_forward(leftWheelPWM);
+          M2_stop();
+          delay(50);
+          M1_stop();
+          delay(400);     
         }
       }
     }
+
     delay(100);
   }
 }
