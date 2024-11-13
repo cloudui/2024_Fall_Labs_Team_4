@@ -49,13 +49,14 @@ const int ledChannel = 0;
 
 // PID
 float e;
+float p_e;
 float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp = 1;
-float Kd = 1;
-float Ki = 1;
+float Kp = 4;
+float Kd = 0;
+float Ki = 0;
 
 const float mid = 6;
 
@@ -323,12 +324,14 @@ void loop() {
   Encoder enc1(M1_ENC_A, M1_ENC_B);
   Encoder enc2(M2_ENC_A, M2_ENC_B);
 
-
-
   while(true) {
     int u;
     int rightWheelPWM;
     int leftWheelPWM;
+
+    int pidRight;
+    int pidLeft;
+
     float pos;
 
     readADC();
@@ -338,15 +341,46 @@ void loop() {
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
     Serial.println("Pos is "); Serial.println(pos);
     delay(100);
-    
+
+
     // Define the PID errors
-    e = 1;
-    d_e = 1;
-    total_e = 1;
+    float DT = .5;
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = Kp * e + Kd * d_e + Ki * 1; //need to integrate e
-    
+    u = Kp * e + 0 * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    int base_pwm = 110;
+
+    pidRight = 150 - u;
+    pidLeft = 136 + u;
+
+    // Constrain the PWM values
+    if (pidRight < 0) {
+      pidRight = 0;
+    } else if (pidRight > PWM_MAX) {
+      pidRight = PWM_MAX;
+    }
+
+    if (pidLeft < 0) {
+      pidLeft = 0;
+    } else if (pidLeft > PWM_MAX) {
+      pidLeft = PWM_MAX;
+    }
+
+    Serial.print("Right: ");
+    Serial.println(pidRight);
+    Serial.print("Left: ");
+    Serial.println(pidLeft);
+    Serial.print("u: ");
+    Serial.println(u);
+
     rightWheelPWM = 150;
     leftWheelPWM = 136;
 
@@ -368,28 +402,29 @@ void loop() {
 
     // turnCorner(0, rightWheelPWM, leftWheelPWM); //left
 
-    if(pos > 8){
-      M2_forward(rightWheelPWM); 
-      M1_stop();
-      delay(50);
-      M2_stop();
-      delay(400);
-    }
-    else if(pos < 4){
-      M1_forward(leftWheelPWM);
-      M2_stop();
-      delay(50);
-      M1_stop();
-      delay(400);     
-    }
-    else{
-      M1_forward(leftWheelPWM); 
-      M2_forward(rightWheelPWM);
+    // if(pos > 9){
+    //   M2_forward(rightWheelPWM); 
+    //   M1_stop();
+    //   delay(50);
+    //   M2_stop();
+    //   delay(400);
+    // }
+    // else if(pos < 3){
+    //   M1_forward(leftWheelPWM);
+    //   M2_stop();
+    //   delay(50);
+    //   M1_stop();
+    //   delay(400);     
+    // }
+    // else{
+      M1_forward(pidLeft); 
+      M2_forward(pidRight);
+
       delay(100);
       M1_stop();
       M2_stop();
       delay(400);
-    }
+    // }
 
     // Check for corners
     int same = all_same();
@@ -471,28 +506,27 @@ void loop() {
       }
 
       readADC();
-      digitalConvert();
-      pos = getPosition(lineArray);
-      while(pos > 9 || pos < 3){
-        readADC();
-        digitalConvert();
-        pos = getPosition(lineArray);
-        if(pos > 9){
-          M2_forward(rightWheelPWM); 
-          M1_stop();
-          delay(50);
-          M2_stop();
-          delay(400);
-        }
-        else if(pos < 3){
-          M1_forward(leftWheelPWM);
-          M2_stop();
-          delay(50);
-          M1_stop();
-          delay(400);     
-        }
-      }
+      // pos = getPosition(lineArray);
+      // while(pos > 8 || pos < 4){
+      //   pos = getPosition(lineArray);
+      //   if(pos > 8){
+      //     M2_forward(rightWheelPWM); 
+      //     M1_stop();
+      //     delay(50);
+      //     M2_stop();
+      //     delay(400);
+      //   }
+      //   else if(pos < 4){
+      //     M1_forward(leftWheelPWM);
+      //     M2_stop();
+      //     delay(50);
+      //     M1_stop();
+      //     delay(400);     
+      //   }
+      // }
     }
-    delay(100);
+
+    delay(1000);
+
   }
 }
