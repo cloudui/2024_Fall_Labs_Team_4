@@ -105,26 +105,25 @@ int32_t all_same(){
 
 // Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
 void digitalConvert() {
-  int threshold = 690;
   for (int i = 0; i < 7; i++) {
-    if (adc1.readADC(i)>threshold) {
+    if (adc1_buf[i] == 0) {
       lineArray[2*i] = 0; 
     } else {
       lineArray[2*i] = 1;
     }
 
-    if (i<6) {
-      if (adc2.readADC(i)>threshold){
+    if (i < 6) {
+      if(adc2_buf[i] == 0){
         lineArray[2*i+1] = 0;
       } else {
         lineArray[2*i+1] = 1;
       }
     }
 
-    // print line sensor position
-    for(int i = 0; i < 13; i++) {
-      Serial.print(lineArray[i]); Serial.print(" ");
-    }
+    // // print line sensor position
+    // for(int i = 0; i < 13; i++) {
+    //   Serial.print(lineArray[i]); Serial.print(" ");
+    // }
   }
 }
 
@@ -150,13 +149,13 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
 void M1_forward(int pwm_value) {
   ledcWrite(M1_IN_1_CHANNEL, 0);
   ledcWrite(M1_IN_2_CHANNEL, pwm_value);
-  Serial.println("I got to M1FWD ");
+  //Serial.println("I got to M1FWD ");
 
 }
 void M2_forward(int pwm_value) {
   ledcWrite(M2_IN_1_CHANNEL, 0);
   ledcWrite(M2_IN_2_CHANNEL, pwm_value);
-  Serial.println("I got to M2FWD ");
+  //Serial.println("I got to M2FWD ");
 }
 
 void M1_backward(int pwm_value) {
@@ -420,6 +419,7 @@ void loop() {
     // else{
       M1_forward(pidLeft); 
       M2_forward(pidRight);
+
       delay(100);
       M1_stop();
       M2_stop();
@@ -431,6 +431,7 @@ void loop() {
     Serial.print("same: ");
     Serial.println(same);
     readADC();
+    digitalConvert();
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
@@ -444,15 +445,15 @@ void loop() {
         Serial.println("I have gotten to same = 1");
         M1_forward(leftWheelPWM);
         M2_forward(rightWheelPWM);
-        delay(100);
+        delay(200);
         M1_stop();
         M2_stop();
         delay(400);
-        turnCorner(1, rightWheelPWM, leftWheelPWM);
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
         Serial.println("right");
         M1_forward(leftWheelPWM);
         M2_forward(rightWheelPWM);
-        delay(100);
+        delay(200);
         M1_stop();
         M2_stop();
         delay(400);
@@ -526,5 +527,6 @@ void loop() {
     }
 
     delay(1000);
+
   }
 }
