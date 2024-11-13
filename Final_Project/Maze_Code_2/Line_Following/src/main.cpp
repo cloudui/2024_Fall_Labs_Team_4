@@ -361,7 +361,6 @@ void loop() {
     float pos;
 
     readADC();
-    // printADC();
     digitalConvert();
     Serial.println("forward");
 
@@ -398,14 +397,14 @@ void loop() {
 
     // turnCorner(0, rightWheelPWM, leftWheelPWM); //left
 
-    if(pos > 9){
+    if(pos > 8){
       M2_forward(rightWheelPWM); 
       M1_stop();
       delay(50);
       M2_stop();
       delay(400);
     }
-    else if(pos < 3){
+    else if(pos < 4){
       M1_forward(leftWheelPWM);
       M2_stop();
       delay(50);
@@ -426,6 +425,7 @@ void loop() {
     Serial.print("same: ");
     Serial.println(same);
     readADC();
+    digitalConvert();
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
@@ -500,17 +500,20 @@ void loop() {
       }
 
       readADC();
+      digitalConvert();
       pos = getPosition(lineArray);
-      while(pos > 8 || pos < 4){
+      while(pos > 9 || pos < 3){
+        readADC();
+        digitalConvert();
         pos = getPosition(lineArray);
-        if(pos > 8){
+        if(pos > 9){
           M2_forward(rightWheelPWM); 
           M1_stop();
           delay(50);
           M2_stop();
           delay(400);
         }
-        else if(pos < 4){
+        else if(pos < 3){
           M1_forward(leftWheelPWM);
           M2_stop();
           delay(50);
