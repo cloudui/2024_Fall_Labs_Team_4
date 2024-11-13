@@ -64,14 +64,14 @@ const float mid = 6;
  */
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    if (adc1.readADC(i) > 700){
+    if (adc1.readADC(i) > 690){
       adc1_buf[i] = 0;
     }
     else{
       adc1_buf[i] = 1;
     }
 
-    if (adc2.readADC(i) > 700){
+    if (adc2.readADC(i) > 690){
       adc2_buf[i] = 0;
     }
     else{
@@ -215,7 +215,7 @@ void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
     M2_forward(right_wheel);
   }
 
-  delay(140);
+  delay(130);
 
   // Stop the robot
   M1_stop();
@@ -410,8 +410,7 @@ void loop() {
       M2_stop();
       delay(50);
       M1_stop();
-      delay(400);
-      
+      delay(400);     
     }
     else{
       M1_forward(leftWheelPWM); 
@@ -426,6 +425,7 @@ void loop() {
     int same = all_same();
     Serial.print("same: ");
     Serial.println(same);
+    readADC();
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
@@ -454,21 +454,23 @@ void loop() {
       }
 
       else{
-        while(all_same() != 0){
-          Serial.println("back");
-          readADC();
-          printADC();
-          M1_backward(leftWheelPWM);
-          M2_backward(rightWheelPWM);
-          delay(100);
-          M1_stop();
-          M2_stop();
-          delay(400);
-        }
+        // while(all_same() != 0){
+        //   Serial.println("back");
+        //   readADC();
+        //   printADC();
+
+        //   if(all_same() != 0){ //check again because delay
+        //     M1_backward(leftWheelPWM);
+        //     M2_backward(rightWheelPWM);
+        //     delay(100);
+        //   }
+
+        //   M1_stop();
+        //   M2_stop();
+        //   delay(1000);
+        // }
 
         Serial.println("turn");
-        readADC();
-        printADC();
 
         int turn = 1;
         for(int i = 0; i < 3; i++){
@@ -479,14 +481,41 @@ void loop() {
         Serial.print("turn: ");
         Serial.println(turn);
 
+        // M1_forward(leftWheelPWM); 
+        // M2_forward(rightWheelPWM);
+        // delay(100);
+        // M1_stop();
+        // M2_stop();
+        // delay(1000);
+
         if(turn == 0){
-          turnCorner(1, rightWheelPWM, leftWheelPWM);
+          turnCorner(0, rightWheelPWM, leftWheelPWM);
           Serial.println("right");
         }
 
         else{
-          turnCorner(0, rightWheelPWM, leftWheelPWM);
+          turnCorner(1, rightWheelPWM, leftWheelPWM);
           Serial.println("left");
+        }
+      }
+
+      readADC();
+      pos = getPosition(lineArray);
+      while(pos > 8 || pos < 4){
+        pos = getPosition(lineArray);
+        if(pos > 8){
+          M2_forward(rightWheelPWM); 
+          M1_stop();
+          delay(50);
+          M2_stop();
+          delay(400);
+        }
+        else if(pos < 4){
+          M1_forward(leftWheelPWM);
+          M2_stop();
+          delay(50);
+          M1_stop();
+          delay(400);     
         }
       }
     }
