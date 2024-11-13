@@ -104,55 +104,26 @@ int32_t all_same(){
 
 // Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
 void digitalConvert() {
-  int threshold = 700;
   for (int i = 0; i < 7; i++) {
-    if (adc1.readADC(i)>threshold) {
+    if (adc1_buf[i] == 0) {
       lineArray[2*i] = 0; 
     } else {
       lineArray[2*i] = 1;
     }
 
-    if (i<6) {
-      if (adc2.readADC(i)>threshold){
+    if (i < 6) {
+      if(adc2_buf[i] == 0){
         lineArray[2*i+1] = 0;
       } else {
         lineArray[2*i+1] = 1;
       }
     }
 
-    // print line sensor position
-    for(int i = 0; i < 13; i++) {
-      Serial.print(lineArray[i]); Serial.print(" ");
-    }
+    // // print line sensor position
+    // for(int i = 0; i < 13; i++) {
+    //   Serial.print(lineArray[i]); Serial.print(" ");
+    // }
   }
-}
-
-// Calculate robot's position on the line 
-float getPositionSweep() {
-  int position = 6;
-  /* Using lineArray[], which is an array of 13 Boolean values representing 1 
-   * if the line sensor reads a white surface and 0 for a dark surface, 
-   * this function returns a value between 0-12 for where the sensor thinks 
-   * the center of line is (6 being the middle)
-   */
-  int first = 0;
-  int last = 12;
-
-  for (int i = 0; i < 13; i++) {
-    if (lineArray[i] == 1) {
-      first = i;
-      break;
-    }
-  }
-
-  for (int i = 12; i >= 0; i--) {
-    if (lineArray[i] == 1) {
-      last = i;
-      break;
-    }
-  }
-  position = (first + last) / 2;
-  return position;
 }
 
 float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
@@ -177,13 +148,13 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
 void M1_forward(int pwm_value) {
   ledcWrite(M1_IN_1_CHANNEL, 0);
   ledcWrite(M1_IN_2_CHANNEL, pwm_value);
-  Serial.println("I got to M1FWD ");
+  //Serial.println("I got to M1FWD ");
 
 }
 void M2_forward(int pwm_value) {
   ledcWrite(M2_IN_1_CHANNEL, 0);
   ledcWrite(M2_IN_2_CHANNEL, pwm_value);
-  Serial.println("I got to M2FWD ");
+  //Serial.println("I got to M2FWD ");
 }
 
 void M1_backward(int pwm_value) {
@@ -439,15 +410,15 @@ void loop() {
         Serial.println("I have gotten to same = 1");
         M1_forward(leftWheelPWM);
         M2_forward(rightWheelPWM);
-        delay(100);
+        delay(200);
         M1_stop();
         M2_stop();
         delay(400);
-        turnCorner(1, rightWheelPWM, leftWheelPWM);
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
         Serial.println("right");
         M1_forward(leftWheelPWM);
         M2_forward(rightWheelPWM);
-        delay(100);
+        delay(200);
         M1_stop();
         M2_stop();
         delay(400);
@@ -522,7 +493,6 @@ void loop() {
         }
       }
     }
-
     delay(100);
   }
 }
