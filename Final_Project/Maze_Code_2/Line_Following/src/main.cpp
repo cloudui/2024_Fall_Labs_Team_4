@@ -356,8 +356,6 @@ void loop() {
     u = Kp * e + 0 * d_e + Ki * total_e; //need to integrate e
 
     // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    int base_pwm = 110;
-
     pidRight = 150 - u;
     pidLeft = 136 + u;
 
@@ -423,7 +421,7 @@ void loop() {
       delay(100);
       M1_stop();
       M2_stop();
-      delay(400);
+      delay(100);
     // }
 
     // Check for corners
@@ -432,6 +430,7 @@ void loop() {
     Serial.println(same);
     readADC();
     digitalConvert();
+    pos = getPosition(lineArray);
     if(same > 0) {
       /* if all same indicates all white, then turn right
        * else back up until it detects both black and white
@@ -443,16 +442,16 @@ void loop() {
 
       if(same == 1){
         Serial.println("I have gotten to same = 1");
-        M1_forward(leftWheelPWM);
-        M2_forward(rightWheelPWM);
-        delay(200);
+        M1_forward(pidLeft);
+        M2_forward(pidRight);
+        delay(125);
         M1_stop();
         M2_stop();
         delay(400);
-        turnCorner(0, rightWheelPWM, leftWheelPWM);
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
         Serial.println("right");
-        M1_forward(leftWheelPWM);
-        M2_forward(rightWheelPWM);
+        M1_forward(pidLeft);
+        M2_forward(pidRight);
         delay(200);
         M1_stop();
         M2_stop();
@@ -478,14 +477,14 @@ void loop() {
 
         Serial.println("turn");
 
-        int turn = 1;
-        for(int i = 0; i < 3; i++){
-          if(adc1_buf[i] == 1 || adc2_buf[i] == 1){
-            turn = 0;
-          }
-        }
-        Serial.print("turn: ");
-        Serial.println(turn);
+        // int turn = 1;
+        // for(int i = 0; i < 3; i++){
+        //   if(adc1_buf[i] == 1 || adc2_buf[i] == 1){
+        //     turn = 0;
+        //   }
+        // }
+        // Serial.print("turn: ");
+        // Serial.println(turn);
 
         // M1_forward(leftWheelPWM); 
         // M2_forward(rightWheelPWM);
@@ -494,18 +493,17 @@ void loop() {
         // M2_stop();
         // delay(1000);
 
-        if(turn == 0){
-          turnCorner(0, rightWheelPWM, leftWheelPWM);
+        if(pos <= 6){
+          turnCorner(1, rightWheelPWM, leftWheelPWM);
           Serial.println("right");
         }
 
         else{
-          turnCorner(1, rightWheelPWM, leftWheelPWM);
+          turnCorner(0, rightWheelPWM, leftWheelPWM);
           Serial.println("left");
         }
       }
 
-      readADC();
       // pos = getPosition(lineArray);
       // while(pos > 8 || pos < 4){
       //   pos = getPosition(lineArray);
