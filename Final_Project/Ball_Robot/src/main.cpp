@@ -5,21 +5,33 @@
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+#include <WiFi.h>
+
+struct __attribute__((packed)) Data {
+    int16_t seq;     // sequence number
+    int32_t distance; // distance
+    float voltage;   // voltage
+    char text[50];   // text
+};
+
+// WiFi network credentials
+const char* ssid = "iPhone (18)";
+const char* password = "lillit12";
+
+// Server IP and port
+const char* host = "172.20.10.8";  // Replace with the IP address of server
+const uint16_t port = 9500;
+
+// Create a client
+WiFiClient client;
+
+int i = 1;
 
 // IMU
 Adafruit_MPU6050 mpu;
 
 const unsigned int ADC_1_CS = 2;
 const unsigned int ADC_2_CS = 17;
-
-// ADC (line sensor)
-Adafruit_MCP3008 adc1;
-Adafruit_MCP3008 adc2;
-
-int adc1_buf[8];
-int adc2_buf[8];
-
-uint8_t lineArray[13]; 
 
 // Encoders
 const unsigned int M1_ENC_A = 39;
@@ -59,90 +71,7 @@ float Kp = 4;
 float Kd = 0;
 float Ki = 0;
 
-const float mid = 6;
-
-/*
- *  Line sensor functions
- */
-void readADC() {
-  for (int i = 0; i < 8; i++) {
-    if (adc1.readADC(i) > 690){
-      adc1_buf[i] = 0;
-    }
-    else{
-      adc1_buf[i] = 1;
-    }
-
-    if (adc2.readADC(i) > 690){
-      adc2_buf[i] = 0;
-    }
-    else{
-      adc2_buf[i] = 1;
-    }
-  }
-}
-
-int32_t all_same(){
-  if(adc1_buf[0] == 1){
-    for(int i = 0; i < 8; i++) {
-      if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
-        return 0;
-      }
-    }
-
-    return 1;
-  }
-
-  else{
-    for(int i = 0; i < 8; i++) {
-      if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
-        return 0;
-      }
-    }
-
-    return 2;
-  }
-}
-
-// Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
-void digitalConvert() {
-  for (int i = 0; i < 7; i++) {
-    if (adc1_buf[i] == 0) {
-      lineArray[2*i] = 0; 
-    } else {
-      lineArray[2*i] = 1;
-    }
-
-    if (i < 6) {
-      if(adc2_buf[i] == 0){
-        lineArray[2*i+1] = 0;
-      } else {
-        lineArray[2*i+1] = 1;
-      }
-    }
-
-    // // print line sensor position
-    // for(int i = 0; i < 13; i++) {
-    //   Serial.print(lineArray[i]); Serial.print(" ");
-    // }
-  }
-}
-
-float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
-    int count = 0;
-    float sum = 0;
-    for (int i = 0; i < 13; i++) {
-        if (lineArray[i] == 1) {
-            sum += i;  
-            count++;         
-        }
-    }
-    if (count == 0) {
-        return 6.0;
-    }
-    return sum/count;
-}
-
+const float time_to_turn_180 = 260.0;
 
 /*
  *  Movement functions
@@ -177,7 +106,9 @@ void M2_stop() {
   ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
-void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
+void turn(bool clockwise, int right_wheel, int left_wheel, float angle) {
+  int delay_time = (int)((angle/180.0) * time_to_turn_180);
+  
   if (clockwise) {
     M1_forward(left_wheel);
     M2_backward(right_wheel);
@@ -188,7 +119,7 @@ void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
     M2_forward(right_wheel);
   }
 
-  delay(130);
+  delay(delay_time);
 
   // Stop the robot
   M1_stop();
@@ -197,27 +128,15 @@ void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
   delay(1000);
 }
 
-void printADC(){
-  for (int i = 0; i < 8; i++) {
-    if (i<7) {
-      Serial.print(adc1_buf[i]); Serial.print("\t");
-    }
-
-    if (i<6) {
-      Serial.print(adc2_buf[i]); Serial.print("\t");
-    }
-  }
-  Serial.println("");
-}
-
 void return_to_center(){
   //TODO
 }
 
 void handle_messages(){
-  // TODO: extract the message
+  Data response;
+  client.readBytes((char*)&response, sizeof(response));
 
-  if(message == "Game Over"){
+  if(response.text == "Game Over"){
     while(1){
       // trap in here
       M1_stop();
@@ -225,15 +144,15 @@ void handle_messages(){
     }
   }
 
-  else if(message == "at left edge"){
+  else if(response.text == "at left edge"){
     //TODO: turn left 2x angle from edge
   }
 
-  else if(message == "at right edge"){
+  else if(response.text == "at right edge"){
     //TODO: turn right 2x angle from edges
   }
   
-  else if(message == "near pong area"){
+  else if(response.text == "near pong area"){
     /* TODO: if player robot is within certain radius of this robot
       turn 180
     else
@@ -255,9 +174,6 @@ void setup() {
   ledcAttachPin(M2_IN_1, M2_IN_1_CHANNEL);
   ledcAttachPin(M2_IN_2, M2_IN_2_CHANNEL);
 
-  adc1.begin(ADC_1_CS);  
-  adc2.begin(ADC_2_CS);
-
   pinMode(M1_I_SENSE, INPUT);
   pinMode(M2_I_SENSE, INPUT);
 
@@ -270,12 +186,6 @@ void setup() {
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
 
   Serial.println("Adafruit MPU6050 test!");
-
-  pinMode(ADC_1_CS, OUTPUT);
-  pinMode(ADC_2_CS, OUTPUT);
-
-  digitalWrite(ADC_1_CS, HIGH); // Without this the ADC's write
-  digitalWrite(ADC_2_CS, HIGH); // to the SPI bus while the nRF24 is!!!!
 
   // Try to initialize!
   if (!mpu.begin()) {
@@ -347,9 +257,38 @@ void setup() {
 
   delay(100);
 
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
+
+  // Connect to the server
+  if (client.connect(host, port)) {
+    Serial.println("Connected to server!");
+  } else {
+    Serial.println("Connection to server failed.");
+    return;
+  }
+
   // take place in arena
   return_to_center();
-  // TODO: wait for message to start game
+
+  // Wait for message to start game
+  while(!client.connected() && !client.available()){
+    Serial.println("Waiting for client connection or availability...");
+  }
+
+  while(client.available()){
+    Data response;
+    client.readBytes((char*)&response, sizeof(response)); // Read data from the server and unpack it into the response struct
+
+    if(response.text != "Start"){
+      Serial.println("Waiting to start game...");
+    }
+  }
 }
 
 void loop(){
@@ -361,7 +300,10 @@ void loop(){
   int pidLeft;
   float pos;
 
-  if (receives_a_message){ // change this line
+  if(client.available()){ // change this line
+      M1_stop();
+      M2_stop();
+      delay(1000);
       handle_messages();
   }
 
@@ -382,17 +324,17 @@ void loop(){
   pidLeft = 136 + u;
 
   // Constrain the PWM values
-    if (pidRight < 0) {
-      pidRight = 0;
-    } else if (pidRight > PWM_MAX) {
-      pidRight = PWM_MAX;
-    }
+  if (pidRight < 0) {
+    pidRight = 0;
+  } else if (pidRight > PWM_MAX) {
+    pidRight = PWM_MAX;
+  }
 
-    if (pidLeft < 0) {
-      pidLeft = 0;
-    } else if (pidLeft > PWM_MAX) {
-      pidLeft = PWM_MAX;
-    }
+  if (pidLeft < 0) {
+    pidLeft = 0;
+  } else if (pidLeft > PWM_MAX) {
+    pidLeft = PWM_MAX;
+  }
 
   // go straight
   M1_forward(pidLeft); 
