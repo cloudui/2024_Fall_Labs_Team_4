@@ -5,6 +5,28 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
+#include <map>
+#include <WiFi.h>
+
+// WiFi
+struct __attribute__((packed)) Data {
+    int16_t seq;     // sequence number
+    int32_t distance; // distance
+    float voltage;   // voltage
+    char text[50];   // text
+};
+
+// WiFi network credentials
+const char* ssid = "iPhone (18)";
+const char* password = "lillit12";
+
+// Server IP and port
+const char* host = "172.20.10.8";  // Replace with the IP address of server
+const uint16_t port = 9500;
+
+// Create a client
+WiFiClient client;
+
 // IMU
 Adafruit_MPU6050 mpu;
 
@@ -210,6 +232,100 @@ void printADC(){
   Serial.println("");
 }
 
+void normal_line_following(bool dotted, int rightWheelPWM, int leftWheelPWM){
+  int u;
+  int pidRight;
+  int pidLeft;
+
+  float pos;
+
+  readADC();
+  digitalConvert();
+  Serial.println("forward");
+
+  pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  Serial.println("Pos is "); Serial.println(pos);
+  delay(100);
+
+  // Define the PID errors
+  float DT = .5;
+  e = 6 - pos;
+  d_e = (e - p_e) / DT;
+  total_e += e*DT;
+
+  // Update the previous error
+  p_e = e;
+
+  // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+  u = Kp * e + 0 * d_e + Ki * total_e; //need to integrate e
+
+  // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+  pidRight = rightWheelPWM - u;
+  pidLeft = leftWheelPWM + u;
+
+  // Constrain the PWM values
+  if (pidRight < 0) {
+    pidRight = 0;
+  } else if (pidRight > PWM_MAX) {
+    pidRight = PWM_MAX;
+  }
+
+  if (pidLeft < 0) {
+    pidLeft = 0;
+  } else if (pidLeft > PWM_MAX) {
+    pidLeft = PWM_MAX;
+  }
+
+  Serial.print("Right: ");
+  Serial.println(pidRight);
+  Serial.print("Left: ");
+  Serial.println(pidLeft);
+  Serial.print("u: ");
+  Serial.println(u);
+
+  M1_forward(pidLeft); 
+  M2_forward(pidRight);
+
+  delay(100);
+  M1_stop();
+  M2_stop();
+  delay(100);
+
+  // Check for corners
+  int same = all_same();
+  Serial.print("same: ");
+  Serial.println(same);
+  readADC();
+  digitalConvert();
+  pos = getPosition(lineArray);
+  if(same > 0) {
+    M1_stop();
+    M2_stop();
+
+    if(same == 1){
+      Serial.println("I have gotten to same = 1");
+      white_box_count++;
+      //read color then go around the box
+    }
+
+    else if(!dotted){
+      Serial.println("turn");
+
+      if(pos <= 6){
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
+        Serial.println("right");
+      }
+
+      else{
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
+        Serial.println("left");
+      }
+    }
+  }
+
+  delay(1000);
+}
+
 /*
  *  setup and loop
  */
@@ -316,27 +432,105 @@ void setup() {
     break;
   }
 
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
+
+  // Connect to the server
+  if (client.connect(host, port)) {
+    Serial.println("Connected to server!");
+  } else {
+    Serial.println("Connection to server failed.");
+    return;
+  }
+
+  std::map<std::string, int> color_count;
+  color_count["red"] = 0;
+  color_count["blue"] = 0;
+  color_count["green"] = 0;
+  color_count["yellow"] = 0;
+  color_count["purple"] = 0;
+
   delay(100);
 }
 
 void loop(){
+  bool dotted = false;
+  int rightWheelPWM = 150;
+  int leftWheelPWM = 136;
+
   if(white_box_count == 0){
-    //forward to line
-    //normal line following
+    // at beginning
+
+    //detect color and update color_count
+
+    // move out of white box
+    M1_forward(leftWheelPWM);
+    M2_forward(rightWheelPWM);
+    delay(250);
+    M1_stop();
+    M2_stop();
+    delay(250);
+
+    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
   }
   else if(white_box_count == 1){
+    // at audio portion
+    
     //forward
     //listen
-    //turn left or right
-    //normal line following
+    
+    while(client.available()){
+      Data response;
+      client.readBytes((char*)&response, sizeof(response));
+
+      if(response.text == "left"){
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "right"){
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
+      }
+    }
+
+    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
   }
   else if(white_box_count == 3){
-    //at dotted line, so normal line following without turning at black
+    // at dotted line
+    dotted = true;
+    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
   }
   else if(white_box_count == 4){
-    //path based on color
+    // choose path based on color
+
+    M1_forward(leftWheelPWM);
+    M2_forward(rightWheelPWM);
+    delay(250);
+    M1_stop();
+    M2_stop();
+    delay(250);
+    
+    //detect colors and update color count
+    
+    while(client.available()){
+      Data response;
+      client.readBytes((char*)&response, sizeof(response));
+
+      if(response.text == "left"){
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "right"){
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "forward"){
+        Serial.printf("Forward");
+      }
+    }
   }
   else{
-    //normal line following
+    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
   }
 }
