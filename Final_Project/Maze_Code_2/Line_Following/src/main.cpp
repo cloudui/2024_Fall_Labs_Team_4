@@ -76,6 +76,17 @@ float Ki = 0;
 
 const float mid = 6;
 
+int u;
+
+int pidRight;
+int pidLeft;
+
+float pos;
+float first_pos;
+int same; 
+int turn;
+int STATE;
+
 /*
  *  Line sensor functions
  */
@@ -347,119 +358,110 @@ void setup() {
     break;
   }
 
+  turn = LEFT;
+  STATE = DEFAULT_STATE;
+
   delay(100);
 }
 
 void loop() {
-  int u;
 
-  int pidRight;
-  int pidLeft;
+  // Encoder enc1(M1_ENC_A, M1_ENC_B);
+  // Encoder enc2(M2_ENC_A, M2_ENC_B);
 
-  float pos;
-  float first_pos;
-  int same; 
-  int turn = LEFT;
-  int STATE = DEFAULT_STATE;
+  readADC();
+  digitalConvert();
+  Serial.println("forward");
 
-  Encoder enc1(M1_ENC_A, M1_ENC_B);
-  Encoder enc2(M2_ENC_A, M2_ENC_B);
+  pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  first_pos = pos;
+  Serial.println("Pos is "); Serial.println(pos);
 
-  while(true) {
+  if (STATE == DEFAULT_STATE) {
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
 
-    readADC();
-    digitalConvert();
-    Serial.println("forward");
+    // Update the previous error
+    p_e = e;
 
-    pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
-    first_pos = pos;
-    Serial.println("Pos is "); Serial.println(pos);
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-    if (STATE == DEFAULT_STATE) {
-      // Define the PID errors
-      e = 6 - pos;
-      d_e = (e - p_e) / DT;
-      total_e += e*DT;
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
 
-      // Update the previous error
-      p_e = e;
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
 
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
-
-      M1_forward(pidLeft);
-      M2_forward(pidRight);
-
-      // TURNING LOGIC
-      if (lineArray[0] == 1) {
-        turn = RIGHT;
-      } else if (lineArray[12] == 1) {
-        turn = LEFT;
-      }
-    } else if (STATE == SQUARE_STATE) {
-      // Define the PID errors
-      e = 9 - pos;
-      d_e = (e - p_e) / DT;
-      total_e += e*DT;
-
-      // Update the previous error
-      p_e = e;
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
-
-      M1_forward(pidLeft);
-      M2_forward(pidRight);
+    // TURNING LOGIC
+    if (lineArray[0] == 1) {
+      turn = RIGHT;
+    } else if (lineArray[12] == 1) {
+      turn = LEFT;
     }
+  } else if (STATE == SQUARE_STATE) {
+    // Define the PID errors
+    e = 9 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
 
-    same = all_same();
-    // Serial.print("same: ");
-    // Serial.println(same);
-    if (STATE == DEFAULT_STATE) {
-      if (same == ALL_WHITE) { // AT SQUARE
-        inch_forward();
+    // Update the previous error
+    p_e = e;
 
-        // turn right to trace square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-        STATE = SQUARE_STATE;
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
 
-        delay(100);
-      } else if (same == ALL_BLACK) { // TURN CORNER
-        Serial.print("turn: ");
-        Serial.println(turn == RIGHT ? "right" : "left");
-
-        delay(100);
-
-        turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
-      }
-    } else if (STATE == SQUARE_STATE) {
-      if (same == ALL_WHITE) { // time to exit square
-        inch_forward();
-
-        // turn right to leave square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        STATE = DEFAULT_STATE;
-      } else if (same == ALL_BLACK) { // trace corner in square
-        inch_forward();
-
-        // turn left to trace square
-        delay(100);
-        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
-      }
-    }
-
-    delay(50);
-
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
   }
+
+  same = all_same();
+  // Serial.print("same: ");
+  // Serial.println(same);
+  if (STATE == DEFAULT_STATE) {
+    if (same == ALL_WHITE) { // AT SQUARE
+      inch_forward();
+
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
+
+      delay(100);
+    } else if (same == ALL_BLACK) { // TURN CORNER
+      Serial.print("turn: ");
+      Serial.println(turn == RIGHT ? "right" : "left");
+
+      delay(100);
+
+      turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+    }
+  } else if (STATE == SQUARE_STATE) {
+    if (same == ALL_WHITE) { // time to exit square
+      inch_forward();
+
+      // turn right to leave square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = DEFAULT_STATE;
+    } else if (same == ALL_BLACK) { // trace corner in square
+      inch_forward();
+
+      // turn left to trace square
+      delay(100);
+      turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+    }
+  }
+
+  delay(50);
+
+
 
 }
