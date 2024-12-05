@@ -8,6 +8,22 @@
 #include <map>
 #include <WiFi.h>
 
+#define RIGHT true
+#define LEFT false
+#define ALL_WHITE 1
+#define ALL_BLACK 2
+#define NOT_ALL_SAME 0
+
+#define DEFAULT_PWM 100
+
+// States
+#define DEFAULT_STATE 0
+#define SQUARE_STATE 1
+#define DOTTED_STATE 2
+#define GRID_STATE 3
+
+#define DT 0.05
+
 // WiFi
 struct __attribute__((packed)) Data {
     int16_t seq;     // sequence number
@@ -76,12 +92,15 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp = 4;
-float Kd = 0;
+float Kp = 1;
+float Kd = 0.35;
 float Ki = 0;
 
 const float mid = 6;
 int white_box_count = 0;
+int STATE = DEFAULT_STATE;
+bool no_change = false;
+bool dotted = false;
 
 /*
  *  Line sensor functions
@@ -108,21 +127,21 @@ int32_t all_same(){
   if(adc1_buf[0] == 1){
     for(int i = 0; i < 8; i++) {
       if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
-        return 0;
+        return NOT_ALL_SAME;
       }
     }
 
-    return 1;
+    return ALL_WHITE;
   }
 
   else{
     for(int i = 0; i < 8; i++) {
       if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
-        return 0;
+        return NOT_ALL_SAME;
       }
     }
 
-    return 2;
+    return ALL_BLACK;
   }
 }
 
@@ -199,24 +218,40 @@ void M2_stop() {
   ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
-void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
-  if (clockwise) {
+int constrain_pwm(int pwm) {
+  if (pwm > PWM_MAX) {
+    return PWM_MAX;
+  } else if (pwm < 0) {
+    return 0;
+  } else {
+    return pwm;
+  }
+}
+
+void inch_forward() {
+  M1_forward(DEFAULT_PWM);
+  M2_forward(DEFAULT_PWM);
+  delay(30);
+  M1_stop();
+  M2_stop();
+}
+
+void turnCorner(bool right, int right_wheel, int left_wheel) {
+  if (right) {
     M1_forward(left_wheel);
     M2_backward(right_wheel);
-  } 
-  
-  else {
+    delay(300);
+  } else {
     M1_backward(left_wheel);
     M2_forward(right_wheel);
+    delay(300);
   }
-
-  delay(130);
 
   // Stop the robot
   M1_stop();
   M2_stop();
 
-  delay(1000);
+  delay(100);
 }
 
 void printADC(){
@@ -232,98 +267,102 @@ void printADC(){
   Serial.println("");
 }
 
-void normal_line_following(bool dotted, int rightWheelPWM, int leftWheelPWM){
-  int u;
-  int pidRight;
-  int pidLeft;
-
-  float pos;
-
+void normal_line_following(bool dotted){
+  int turn;
+  
   readADC();
   digitalConvert();
   Serial.println("forward");
 
   pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  first_pos = pos;
   Serial.println("Pos is "); Serial.println(pos);
-  delay(100);
 
-  // Define the PID errors
-  float DT = .5;
-  e = 6 - pos;
-  d_e = (e - p_e) / DT;
-  total_e += e*DT;
+  if (STATE == DEFAULT_STATE) {
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
 
-  // Update the previous error
-  p_e = e;
+    // Update the previous error
+    p_e = e;
 
-  // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-  u = Kp * e + 0 * d_e + Ki * total_e; //need to integrate e
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-  // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-  pidRight = rightWheelPWM - u;
-  pidLeft = leftWheelPWM + u;
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
 
-  // Constrain the PWM values
-  if (pidRight < 0) {
-    pidRight = 0;
-  } else if (pidRight > PWM_MAX) {
-    pidRight = PWM_MAX;
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+
+    // TURNING LOGIC
+    if (lineArray[0] == 1) {
+      turn = RIGHT;
+    } else if (lineArray[12] == 1) {
+      turn = LEFT;
+    }
+  } else if (STATE == SQUARE_STATE) {
+    // Define the PID errors
+    e = 9 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
   }
 
-  if (pidLeft < 0) {
-    pidLeft = 0;
-  } else if (pidLeft > PWM_MAX) {
-    pidLeft = PWM_MAX;
-  }
-
-  Serial.print("Right: ");
-  Serial.println(pidRight);
-  Serial.print("Left: ");
-  Serial.println(pidLeft);
-  Serial.print("u: ");
-  Serial.println(u);
-
-  M1_forward(pidLeft); 
-  M2_forward(pidRight);
-
-  delay(100);
-  M1_stop();
-  M2_stop();
-  delay(100);
-
-  // Check for corners
   int same = all_same();
-  Serial.print("same: ");
-  Serial.println(same);
-  readADC();
-  digitalConvert();
-  pos = getPosition(lineArray);
-  if(same > 0) {
-    M1_stop();
-    M2_stop();
+  // Serial.print("same: ");
+  // Serial.println(same);
+  if (STATE == DEFAULT_STATE) {
+    if (same == ALL_WHITE) { // AT SQUARE
+      inch_forward();
 
-    if(same == 1){
-      Serial.println("I have gotten to same = 1");
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
       white_box_count++;
-      //read color then go around the box
+
+      delay(100);
+    } else if (same == ALL_BLACK) { // TURN CORNER
+      Serial.print("turn: ");
+      Serial.println(turn == RIGHT ? "right" : "left");
+
+      delay(100);
+
+      turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
     }
+  } else if (STATE == SQUARE_STATE) {
+    if (same == ALL_WHITE) { // time to exit square
+      inch_forward();
 
-    else if(!dotted){
-      Serial.println("turn");
+      // turn right to leave square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
 
-      if(pos <= 6){
-        turnCorner(1, rightWheelPWM, leftWheelPWM);
-        Serial.println("right");
-      }
+      STATE = DEFAULT_STATE;
+      no_change = false;
 
-      else{
-        turnCorner(0, rightWheelPWM, leftWheelPWM);
-        Serial.println("left");
-      }
+    } else if (same == ALL_BLACK) { // trace corner in square
+      inch_forward();
+
+      // turn left to trace square
+      delay(100);
+      turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
     }
   }
-
-  delay(1000);
 }
 
 /*
@@ -452,31 +491,29 @@ void setup() {
   color_count["red"] = 0;
   color_count["blue"] = 0;
   color_count["green"] = 0;
-  color_count["yellow"] = 0;
-  color_count["purple"] = 0;
+  color_count["other"] = 0;
 
   delay(100);
 }
 
 void loop(){
-  bool dotted = false;
-  int rightWheelPWM = 150;
-  int leftWheelPWM = 136;
-
-  if(white_box_count == 0){
+  if(no_change){
+    normal_line_following(dotted);
+  }
+  else if(white_box_count == 0){
     // at beginning
 
     //detect color and update color_count
 
-    // move out of white box
-    M1_forward(leftWheelPWM);
-    M2_forward(rightWheelPWM);
+    // move straight out of white box
+    M1_forward(DEFAULT_PWM);
+    M2_forward(DEFAULT_PWM);
     delay(250);
     M1_stop();
     M2_stop();
     delay(250);
 
-    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
+    no_change = true;
   }
   else if(white_box_count == 1){
     // at audio portion
@@ -496,15 +533,17 @@ void loop(){
       }
     }
 
-    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
+    no_change = true;
   }
   else if(white_box_count == 3){
     // at dotted line
     dotted = true;
-    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
+    no_change = true;
   }
   else if(white_box_count == 4){
     // choose path based on color
+
+    dotted = false;
 
     M1_forward(leftWheelPWM);
     M2_forward(rightWheelPWM);
@@ -529,8 +568,10 @@ void loop(){
         Serial.printf("Forward");
       }
     }
+
+    no_change = true;
   }
   else{
-    normal_line_following(dotted, rightWheelPWM, leftWheelPWM);
+    no_change = true;
   }
-}
+};
