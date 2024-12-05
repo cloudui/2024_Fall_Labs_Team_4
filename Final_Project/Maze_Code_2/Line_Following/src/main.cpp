@@ -5,6 +5,22 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
+#define RIGHT true
+#define LEFT false
+#define ALL_WHITE 1
+#define ALL_BLACK 2
+#define NOT_ALL_SAME 0
+
+#define DEFAULT_PWM 100
+
+// States
+#define DEFAULT_STATE 0
+#define SQUARE_STATE 1
+#define DOTTED_STATE 2
+#define GRID_STATE 3
+
+#define DT 0.05
+
 // IMU
 Adafruit_MPU6050 mpu;
 
@@ -54,8 +70,8 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp = 4;
-float Kd = 0;
+float Kp = 1;
+float Kd = 0.35;
 float Ki = 0;
 
 const float mid = 6;
@@ -85,21 +101,21 @@ int32_t all_same(){
   if(adc1_buf[0] == 1){
     for(int i = 0; i < 8; i++) {
       if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
-        return 0;
+        return NOT_ALL_SAME;
       }
     }
 
-    return 1;
+    return ALL_WHITE;
   }
 
   else{
     for(int i = 0; i < 8; i++) {
       if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
-        return 0;
+        return NOT_ALL_SAME;
       }
     }
 
-    return 2;
+    return ALL_BLACK;
   }
 }
 
@@ -176,24 +192,40 @@ void M2_stop() {
   ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
-void turnCorner(bool clockwise, int right_wheel, int left_wheel) {
-  if (clockwise) {
+int constrain_pwm(int pwm) {
+  if (pwm > PWM_MAX) {
+    return PWM_MAX;
+  } else if (pwm < 0) {
+    return 0;
+  } else {
+    return pwm;
+  }
+}
+
+void inch_forward() {
+  M1_forward(DEFAULT_PWM);
+  M2_forward(DEFAULT_PWM);
+  delay(30);
+  M1_stop();
+  M2_stop();
+}
+
+void turnCorner(bool right, int right_wheel, int left_wheel) {
+  if (right) {
     M1_forward(left_wheel);
     M2_backward(right_wheel);
-  } 
-  
-  else {
+    delay(300);
+  } else {
     M1_backward(left_wheel);
     M2_forward(right_wheel);
+    delay(300);
   }
-
-  delay(130);
 
   // Stop the robot
   M1_stop();
   M2_stop();
 
-  delay(1000);
+  delay(100);
 }
 
 void printADC(){
@@ -319,212 +351,115 @@ void setup() {
 }
 
 void loop() {
+  int u;
 
+  int pidRight;
+  int pidLeft;
+
+  float pos;
+  float first_pos;
+  int same; 
+  int turn = LEFT;
+  int STATE = DEFAULT_STATE;
 
   Encoder enc1(M1_ENC_A, M1_ENC_B);
   Encoder enc2(M2_ENC_A, M2_ENC_B);
 
   while(true) {
-    int u;
-    int rightWheelPWM;
-    int leftWheelPWM;
-
-    int pidRight;
-    int pidLeft;
-
-    float pos;
 
     readADC();
     digitalConvert();
     Serial.println("forward");
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+    first_pos = pos;
     Serial.println("Pos is "); Serial.println(pos);
-    delay(100);
 
+    if (STATE == DEFAULT_STATE) {
+      // Define the PID errors
+      e = 6 - pos;
+      d_e = (e - p_e) / DT;
+      total_e += e*DT;
 
-    // Define the PID errors
-    float DT = .5;
-    e = 6 - pos;
-    d_e = (e - p_e) / DT;
-    total_e += e*DT;
+      // Update the previous error
+      p_e = e;
 
-    // Update the previous error
-    p_e = e;
+      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = Kp * e + 0 * d_e + Ki * total_e; //need to integrate e
+      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+      pidLeft = constrain_pwm(90 + u);
+      pidRight = constrain_pwm(90 - u);
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    pidRight = 150 - u;
-    pidLeft = 136 + u;
-
-    // Constrain the PWM values
-    if (pidRight < 0) {
-      pidRight = 0;
-    } else if (pidRight > PWM_MAX) {
-      pidRight = PWM_MAX;
-    }
-
-    if (pidLeft < 0) {
-      pidLeft = 0;
-    } else if (pidLeft > PWM_MAX) {
-      pidLeft = PWM_MAX;
-    }
-
-    Serial.print("Right: ");
-    Serial.println(pidRight);
-    Serial.print("Left: ");
-    Serial.println(pidLeft);
-    Serial.print("u: ");
-    Serial.println(u);
-
-    rightWheelPWM = 150;
-    leftWheelPWM = 136;
-
-    // M1_forward(leftWheelPWM); 
-    // M2_forward(rightWheelPWM);
-    // delay(100);
-    // M1_stop();
-    // M2_stop();
-    // delay(400);
-
-    // turnCorner(1, rightWheelPWM, leftWheelPWM); //right
-
-    // M1_forward(leftWheelPWM); 
-    // M2_forward(rightWheelPWM);
-    // delay(100);
-    // M1_stop();
-    // M2_stop();
-    // delay(400);
-
-    // turnCorner(0, rightWheelPWM, leftWheelPWM); //left
-
-    // if(pos > 9){
-    //   M2_forward(rightWheelPWM); 
-    //   M1_stop();
-    //   delay(50);
-    //   M2_stop();
-    //   delay(400);
-    // }
-    // else if(pos < 3){
-    //   M1_forward(leftWheelPWM);
-    //   M2_stop();
-    //   delay(50);
-    //   M1_stop();
-    //   delay(400);     
-    // }
-    // else{
-      M1_forward(pidLeft); 
+      M1_forward(pidLeft);
       M2_forward(pidRight);
 
-      delay(100);
-      M1_stop();
-      M2_stop();
-      delay(100);
-    // }
-
-    // Check for corners
-    int same = all_same();
-    Serial.print("same: ");
-    Serial.println(same);
-    readADC();
-    digitalConvert();
-    pos = getPosition(lineArray);
-    if(same > 0) {
-      /* if all same indicates all white, then turn right
-       * else back up until it detects both black and white
-       * then if there is white on the right, turn right
-       * else if there is white on the left, turn left
-      */
-      M1_stop();
-      M2_stop();
-
-      if(same == 1){
-        Serial.println("I have gotten to same = 1");
-        M1_forward(pidLeft);
-        M2_forward(pidRight);
-        delay(125);
-        M1_stop();
-        M2_stop();
-        delay(400);
-        turnCorner(1, rightWheelPWM, leftWheelPWM);
-        Serial.println("right");
-        M1_forward(pidLeft);
-        M2_forward(pidRight);
-        delay(200);
-        M1_stop();
-        M2_stop();
-        delay(400);
+      // TURNING LOGIC
+      if (lineArray[0] == 1) {
+        turn = RIGHT;
+      } else if (lineArray[12] == 1) {
+        turn = LEFT;
       }
+    } else if (STATE == SQUARE_STATE) {
+      // Define the PID errors
+      e = 9 - pos;
+      d_e = (e - p_e) / DT;
+      total_e += e*DT;
 
-      else{
-        // while(all_same() != 0){
-        //   Serial.println("back");
-        //   readADC();
-        //   printADC();
+      // Update the previous error
+      p_e = e;
 
-        //   if(all_same() != 0){ //check again because delay
-        //     M1_backward(leftWheelPWM);
-        //     M2_backward(rightWheelPWM);
-        //     delay(100);
-        //   }
+      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-        //   M1_stop();
-        //   M2_stop();
-        //   delay(1000);
-        // }
+      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+      pidLeft = constrain_pwm(90 + u);
+      pidRight = constrain_pwm(90 - u);
 
-        Serial.println("turn");
-
-        // int turn = 1;
-        // for(int i = 0; i < 3; i++){
-        //   if(adc1_buf[i] == 1 || adc2_buf[i] == 1){
-        //     turn = 0;
-        //   }
-        // }
-        // Serial.print("turn: ");
-        // Serial.println(turn);
-
-        // M1_forward(leftWheelPWM); 
-        // M2_forward(rightWheelPWM);
-        // delay(100);
-        // M1_stop();
-        // M2_stop();
-        // delay(1000);
-
-        if(pos <= 6){
-          turnCorner(1, rightWheelPWM, leftWheelPWM);
-          Serial.println("right");
-        }
-
-        else{
-          turnCorner(0, rightWheelPWM, leftWheelPWM);
-          Serial.println("left");
-        }
-      }
-
-      // pos = getPosition(lineArray);
-      // while(pos > 8 || pos < 4){
-      //   pos = getPosition(lineArray);
-      //   if(pos > 8){
-      //     M2_forward(rightWheelPWM); 
-      //     M1_stop();
-      //     delay(50);
-      //     M2_stop();
-      //     delay(400);
-      //   }
-      //   else if(pos < 4){
-      //     M1_forward(leftWheelPWM);
-      //     M2_stop();
-      //     delay(50);
-      //     M1_stop();
-      //     delay(400);     
-      //   }
-      // }
+      M1_forward(pidLeft);
+      M2_forward(pidRight);
     }
 
-    delay(1000);
+    same = all_same();
+    // Serial.print("same: ");
+    // Serial.println(same);
+    if (STATE == DEFAULT_STATE) {
+      if (same == ALL_WHITE) { // AT SQUARE
+        inch_forward();
+
+        // turn right to trace square
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+        STATE = SQUARE_STATE;
+
+        delay(100);
+      } else if (same == ALL_BLACK) { // TURN CORNER
+        Serial.print("turn: ");
+        Serial.println(turn == RIGHT ? "right" : "left");
+
+        delay(100);
+
+        turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+      }
+    } else if (STATE == SQUARE_STATE) {
+      if (same == ALL_WHITE) { // time to exit square
+        inch_forward();
+
+        // turn right to leave square
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+        STATE = DEFAULT_STATE;
+      } else if (same == ALL_BLACK) { // trace corner in square
+        inch_forward();
+
+        // turn left to trace square
+        delay(100);
+        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+      }
+    }
+
+    delay(50);
 
   }
+
 }
