@@ -4,7 +4,9 @@
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-// #include <Wifi.h>
+
+#include <map>
+#include <WiFi.h>
 
 #define RIGHT true
 #define LEFT false
@@ -21,6 +23,25 @@
 #define GRID_STATE 3
 
 #define DT 0.05
+
+// WiFi
+struct __attribute__((packed)) Data {
+    int16_t seq;     // sequence number
+    int32_t distance; // distance
+    float voltage;   // voltage
+    char text[50];   // text
+};
+
+// WiFi network credentials
+const char* ssid = "iPhone (18)";
+const char* password = "lillit12";
+
+// Server IP and port
+const char* host = "172.20.10.8";  // Replace with the IP address of server
+const uint16_t port = 9500;
+
+// Create a client
+WiFiClient client;
 
 // IMU
 Adafruit_MPU6050 mpu;
@@ -71,33 +92,34 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-const float Kp = 1;
-const float Kd = 0.35;
-const float Ki = 0;
+float Kp = 1;
+float Kd = 0.35;
+float Ki = 0;
 
 const float mid = 6;
-
-int u;
-
-int pidRight;
-int pidLeft;
-
-float pos;
-float first_pos;
-int same; 
-int turn;
-int STATE;
-int SQUARE_COUNT;
-
-// Create a client
+int white_box_count = 0;
+int STATE = DEFAULT_STATE;
+bool no_change = false;
+bool dotted = false;
 
 /*
  *  Line sensor functions
  */
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    adc1_buf[i] = adc1.readADC(i) > 690 ? 0 : 1;
-    adc2_buf[i] = adc2.readADC(i) > 690 ? 0 : 1;
+    if (adc1.readADC(i) > 690){
+      adc1_buf[i] = 0;
+    }
+    else{
+      adc1_buf[i] = 1;
+    }
+
+    if (adc2.readADC(i) > 690){
+      adc2_buf[i] = 0;
+    }
+    else{
+      adc2_buf[i] = 1;
+    }
   }
 }
 
@@ -126,10 +148,18 @@ int32_t all_same(){
 // Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
 void digitalConvert() {
   for (int i = 0; i < 7; i++) {
-    lineArray[2*i] = adc1_buf[i];
+    if (adc1_buf[i] == 0) {
+      lineArray[2*i] = 0; 
+    } else {
+      lineArray[2*i] = 1;
+    }
 
     if (i < 6) {
-      lineArray[2*i + 1] = adc2_buf[i];
+      if(adc2_buf[i] == 0){
+        lineArray[2*i+1] = 0;
+      } else {
+        lineArray[2*i+1] = 1;
+      }
     }
 
     // // print line sensor position
@@ -198,31 +228,23 @@ int constrain_pwm(int pwm) {
   }
 }
 
-void inch_forward(int time) {
+void inch_forward() {
   M1_forward(DEFAULT_PWM);
   M2_forward(DEFAULT_PWM);
-  delay(time);
-  M1_stop();
-  M2_stop();
-}
-
-void stop() {
+  delay(30);
   M1_stop();
   M2_stop();
 }
 
 void turnCorner(bool right, int right_wheel, int left_wheel) {
-  stop();
-  delay(500);
-
   if (right) {
     M1_forward(left_wheel);
     M2_backward(right_wheel);
-    delay(270);
+    delay(300);
   } else {
     M1_backward(left_wheel);
     M2_forward(right_wheel);
-    delay(240);
+    delay(300);
   }
 
   // Stop the robot
@@ -245,14 +267,109 @@ void printADC(){
   Serial.println("");
 }
 
+void normal_line_following(bool dotted){
+  int turn;
+  
+  readADC();
+  digitalConvert();
+  Serial.println("forward");
+
+  pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  first_pos = pos;
+  Serial.println("Pos is "); Serial.println(pos);
+
+  if (STATE == DEFAULT_STATE) {
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+
+    // TURNING LOGIC
+    if (lineArray[0] == 1) {
+      turn = RIGHT;
+    } else if (lineArray[12] == 1) {
+      turn = LEFT;
+    }
+  } else if (STATE == SQUARE_STATE) {
+    // Define the PID errors
+    e = 9 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+  }
+
+  int same = all_same();
+  // Serial.print("same: ");
+  // Serial.println(same);
+  if (STATE == DEFAULT_STATE) {
+    if (same == ALL_WHITE) { // AT SQUARE
+      inch_forward();
+
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
+      white_box_count++;
+
+      delay(100);
+    } else if (same == ALL_BLACK) { // TURN CORNER
+      Serial.print("turn: ");
+      Serial.println(turn == RIGHT ? "right" : "left");
+
+      delay(100);
+
+      turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+    }
+  } else if (STATE == SQUARE_STATE) {
+    if (same == ALL_WHITE) { // time to exit square
+      inch_forward();
+
+      // turn right to leave square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = DEFAULT_STATE;
+      no_change = false;
+
+    } else if (same == ALL_BLACK) { // trace corner in square
+      inch_forward();
+
+      // turn left to trace square
+      delay(100);
+      turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+    }
+  }
+}
+
 /*
  *  setup and loop
  */
 void setup() {
   Serial.begin(115200);
-
-  pinMode(14, OUTPUT);
-  digitalWrite(14, LOW);
 
   ledcSetup(M1_IN_1_CHANNEL, freq, resolution);
   ledcSetup(M1_IN_2_CHANNEL, freq, resolution);
@@ -270,7 +387,8 @@ void setup() {
   pinMode(M1_I_SENSE, INPUT);
   pinMode(M2_I_SENSE, INPUT);
 
-  stop();
+  M1_stop();
+  M2_stop();
 
   // IMU Stop
   
@@ -353,140 +471,107 @@ void setup() {
     break;
   }
 
-  turn = LEFT;
-  STATE = DEFAULT_STATE;
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
 
-  SQUARE_COUNT = 0;
+  // Connect to the server
+  if (client.connect(host, port)) {
+    Serial.println("Connected to server!");
+  } else {
+    Serial.println("Connection to server failed.");
+    return;
+  }
+
+  std::map<std::string, int> color_count;
+  color_count["red"] = 0;
+  color_count["blue"] = 0;
+  color_count["green"] = 0;
+  color_count["other"] = 0;
 
   delay(100);
 }
 
-
-void loop() {
-  
-  Encoder enc1(M1_ENC_A, M1_ENC_B);
-  Encoder enc2(M2_ENC_A, M2_ENC_B);
-  enc1.write(0);
-  enc2.write(0);
-
-  while(true) {
-
-    readADC();
-    digitalConvert();
-    
-    Serial.println("forward");
-
-    pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
-    first_pos = pos;
-    Serial.println("Pos is "); Serial.println(pos);
-
-    if (STATE == DEFAULT_STATE) {
-      // Define the PID errors
-      e = 6 - pos;
-      d_e = (e - p_e) / DT;
-      total_e += e*DT;
-
-      // Update the previous error
-      p_e = e;
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
-
-      M1_forward(pidLeft);
-      M2_forward(pidRight);
-
-      // TURNING LOGIC
-      if (lineArray[0] == 1) {
-        turn = RIGHT;
-      } else if (lineArray[12] == 1 && pos > 6) {
-        turn = LEFT;
-      }
-    } else if (STATE == SQUARE_STATE) {
-      // Define the PID errors
-      e = 9 - pos;
-      d_e = (e - p_e) / DT;
-      total_e += e*DT;
-
-      // Update the previous error
-      p_e = e;
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
-
-      M1_forward(pidLeft);
-      M2_forward(pidRight);
-    }
-
-    same = all_same();
-    // Serial.print("same: ");
-    // Serial.println(same);
-    if (STATE == DEFAULT_STATE) {
-      if (same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
-        stop();
-        delay(1000);
-
-        // while(client.available()){
-        //   Data response;
-        //   client.readBytes((char*)&response, sizeof(response));
-
-        //   if(response.text == "left"){
-        //     turnCorner(0, DEFAULT_PWM, DEFAULT_PWM);
-        //   }
-        //   else if(response.text == "right"){
-        //     turnCorner(1, DEFAULT_PWM, DEFAULT_PWM);
-        //   }
-        //   else if(response.text == "forward"){
-        //     Serial.printf("Forward");
-        //   }
-        // }
-        STATE = DEFAULT_STATE;
-
-      } else if (same == ALL_WHITE) { // AT SQUARE
-        inch_forward(30);
-
-        // turn right to trace square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        STATE = SQUARE_STATE;
-        SQUARE_COUNT++;
-        
-        delay(100);
-      } else if (same == ALL_BLACK) { // TURN CORNER
-        Serial.print("turn: ");
-        Serial.println(turn == RIGHT ? "right" : "left");
-
-        turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
-      }
-    } else if (STATE == SQUARE_STATE) {
-      if (same == ALL_WHITE) { // time to exit square
-        inch_forward(100);
-
-        // turn right to leave square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        if (SQUARE_COUNT == 2) {
-          STATE = DOTTED_STATE;
-        } else {
-          STATE = DEFAULT_STATE;
-        }
-      } else if (same == ALL_BLACK) { // trace corner in square
-        // inch_forward();
-        stop();
-
-        // turn left to trace square
-        delay(100);
-        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
-      }
-    }
-
-    delay(50);
+void loop(){
+  if(no_change){
+    normal_line_following(dotted);
   }
-}
+  else if(white_box_count == 0){
+    // at beginning
+
+    //detect color and update color_count
+
+    // move straight out of white box
+    M1_forward(DEFAULT_PWM);
+    M2_forward(DEFAULT_PWM);
+    delay(250);
+    M1_stop();
+    M2_stop();
+    delay(250);
+
+    no_change = true;
+  }
+  else if(white_box_count == 1){
+    // at audio portion
+    
+    //forward
+    //listen
+    
+    while(client.available()){
+      Data response;
+      client.readBytes((char*)&response, sizeof(response));
+
+      if(response.text == "left"){
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "right"){
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
+      }
+    }
+
+    no_change = true;
+  }
+  else if(white_box_count == 3){
+    // at dotted line
+    dotted = true;
+    no_change = true;
+  }
+  else if(white_box_count == 4){
+    // choose path based on color
+
+    dotted = false;
+
+    M1_forward(leftWheelPWM);
+    M2_forward(rightWheelPWM);
+    delay(250);
+    M1_stop();
+    M2_stop();
+    delay(250);
+    
+    //detect colors and update color count
+    
+    while(client.available()){
+      Data response;
+      client.readBytes((char*)&response, sizeof(response));
+
+      if(response.text == "left"){
+        turnCorner(0, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "right"){
+        turnCorner(1, rightWheelPWM, leftWheelPWM);
+      }
+      else if(response.text == "forward"){
+        Serial.printf("Forward");
+      }
+    }
+
+    no_change = true;
+  }
+  else{
+    no_change = true;
+  }
+};

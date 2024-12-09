@@ -13,12 +13,12 @@ const char* password = "lillit12";
 
 // Server IP and port
 const char* host = "172.20.10.8";  // Replace with the IP address of server
-const uint16_t port = 9500;
+const uint16_t port = 9751;
 
 // Create a client
 WiFiClient client;
 
-int i = 0;
+int i = 1;
 
 void setup() {
   Serial.begin(115200);
@@ -43,7 +43,7 @@ void setup() {
 void loop() {
     // Prepare data packet
     Data data;
-    data.seq = 1;
+    data.seq = i;
     data.distance = 1000;
     data.voltage = 3.7f;
     strncpy(data.text, "Hello from ESP32!", sizeof(data.text) - 1);
@@ -64,12 +64,16 @@ void loop() {
 
       // Increment sequence number for the next packet and add a delay between messages
       data.seq++;
-      delay(5000); // Send data every 5 seconds
+      i += 1;
+      delay(5000); // Send data every 5 seconds 
     } else {
-      if(i == 0){
-        Serial.println("Disconnected from server.");
-        i++;
+      Serial.println("Disconnected from server.");
+      // Connect to the server
+      if (client.connect(host, port)) {
+        Serial.println("Connected to server!");
+      } else {
+        Serial.println("Connection to server failed.");
+        return;
       }
-      client.stop();
     }
 }
