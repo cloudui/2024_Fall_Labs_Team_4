@@ -4,6 +4,7 @@
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+// #include <Wifi.h>
 
 #define RIGHT true
 #define LEFT false
@@ -70,30 +71,33 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-float Kp = 1;
-float Kd = 0.35;
-float Ki = 0;
+const float Kp = 1;
+const float Kd = 0.35;
+const float Ki = 0;
 
 const float mid = 6;
+
+int u;
+
+int pidRight;
+int pidLeft;
+
+float pos;
+float first_pos;
+int same; 
+int turn;
+int STATE;
+int SQUARE_COUNT;
+
+// Create a client
 
 /*
  *  Line sensor functions
  */
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    if (adc1.readADC(i) > 690){
-      adc1_buf[i] = 0;
-    }
-    else{
-      adc1_buf[i] = 1;
-    }
-
-    if (adc2.readADC(i) > 690){
-      adc2_buf[i] = 0;
-    }
-    else{
-      adc2_buf[i] = 1;
-    }
+    adc1_buf[i] = adc1.readADC(i) > 690 ? 0 : 1;
+    adc2_buf[i] = adc2.readADC(i) > 690 ? 0 : 1;
   }
 }
 
@@ -122,18 +126,10 @@ int32_t all_same(){
 // Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
 void digitalConvert() {
   for (int i = 0; i < 7; i++) {
-    if (adc1_buf[i] == 0) {
-      lineArray[2*i] = 0; 
-    } else {
-      lineArray[2*i] = 1;
-    }
+    lineArray[2*i] = adc1_buf[i];
 
     if (i < 6) {
-      if(adc2_buf[i] == 0){
-        lineArray[2*i+1] = 0;
-      } else {
-        lineArray[2*i+1] = 1;
-      }
+      lineArray[2*i + 1] = adc2_buf[i];
     }
 
     // // print line sensor position
@@ -202,23 +198,31 @@ int constrain_pwm(int pwm) {
   }
 }
 
-void inch_forward() {
+void inch_forward(int time) {
   M1_forward(DEFAULT_PWM);
   M2_forward(DEFAULT_PWM);
-  delay(30);
+  delay(time);
+  M1_stop();
+  M2_stop();
+}
+
+void stop() {
   M1_stop();
   M2_stop();
 }
 
 void turnCorner(bool right, int right_wheel, int left_wheel) {
+  stop();
+  delay(500);
+
   if (right) {
     M1_forward(left_wheel);
     M2_backward(right_wheel);
-    delay(300);
+    delay(270);
   } else {
     M1_backward(left_wheel);
     M2_forward(right_wheel);
-    delay(300);
+    delay(240);
   }
 
   // Stop the robot
@@ -247,6 +251,9 @@ void printADC(){
 void setup() {
   Serial.begin(115200);
 
+  pinMode(14, OUTPUT);
+  digitalWrite(14, LOW);
+
   ledcSetup(M1_IN_1_CHANNEL, freq, resolution);
   ledcSetup(M1_IN_2_CHANNEL, freq, resolution);
   ledcSetup(M2_IN_1_CHANNEL, freq, resolution);
@@ -263,8 +270,7 @@ void setup() {
   pinMode(M1_I_SENSE, INPUT);
   pinMode(M2_I_SENSE, INPUT);
 
-  M1_stop();
-  M2_stop();
+  stop();
 
   // IMU Stop
   
@@ -347,28 +353,27 @@ void setup() {
     break;
   }
 
+  turn = LEFT;
+  STATE = DEFAULT_STATE;
+
+  SQUARE_COUNT = 0;
+
   delay(100);
 }
 
+
 void loop() {
-  int u;
-
-  int pidRight;
-  int pidLeft;
-
-  float pos;
-  float first_pos;
-  int same; 
-  int turn = LEFT;
-  int STATE = DEFAULT_STATE;
-
+  
   Encoder enc1(M1_ENC_A, M1_ENC_B);
   Encoder enc2(M2_ENC_A, M2_ENC_B);
+  enc1.write(0);
+  enc2.write(0);
 
   while(true) {
 
     readADC();
     digitalConvert();
+    
     Serial.println("forward");
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
@@ -397,7 +402,7 @@ void loop() {
       // TURNING LOGIC
       if (lineArray[0] == 1) {
         turn = RIGHT;
-      } else if (lineArray[12] == 1) {
+      } else if (lineArray[12] == 1 && pos > 6) {
         turn = LEFT;
       }
     } else if (STATE == SQUARE_STATE) {
@@ -424,33 +429,57 @@ void loop() {
     // Serial.print("same: ");
     // Serial.println(same);
     if (STATE == DEFAULT_STATE) {
-      if (same == ALL_WHITE) { // AT SQUARE
-        inch_forward();
+      if (same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
+        stop();
+        delay(1000);
+
+        // while(client.available()){
+        //   Data response;
+        //   client.readBytes((char*)&response, sizeof(response));
+
+        //   if(response.text == "left"){
+        //     turnCorner(0, DEFAULT_PWM, DEFAULT_PWM);
+        //   }
+        //   else if(response.text == "right"){
+        //     turnCorner(1, DEFAULT_PWM, DEFAULT_PWM);
+        //   }
+        //   else if(response.text == "forward"){
+        //     Serial.printf("Forward");
+        //   }
+        // }
+        STATE = DEFAULT_STATE;
+
+      } else if (same == ALL_WHITE) { // AT SQUARE
+        inch_forward(30);
 
         // turn right to trace square
         turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
 
         STATE = SQUARE_STATE;
-
+        SQUARE_COUNT++;
+        
         delay(100);
       } else if (same == ALL_BLACK) { // TURN CORNER
         Serial.print("turn: ");
         Serial.println(turn == RIGHT ? "right" : "left");
 
-        delay(100);
-
         turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
       }
     } else if (STATE == SQUARE_STATE) {
       if (same == ALL_WHITE) { // time to exit square
-        inch_forward();
+        inch_forward(100);
 
         // turn right to leave square
         turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
 
-        STATE = DEFAULT_STATE;
+        if (SQUARE_COUNT == 2) {
+          STATE = DOTTED_STATE;
+        } else {
+          STATE = DEFAULT_STATE;
+        }
       } else if (same == ALL_BLACK) { // trace corner in square
-        inch_forward();
+        // inch_forward();
+        stop();
 
         // turn left to trace square
         delay(100);
@@ -459,7 +488,5 @@ void loop() {
     }
 
     delay(50);
-
   }
-
 }
