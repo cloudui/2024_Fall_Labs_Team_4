@@ -1,6 +1,10 @@
 import socket
 import struct
 import speech_recognition as sr
+import cv2
+import time
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Host IP and port
 HOST = '172.20.10.8'  # Replace with your server's IP
@@ -20,7 +24,13 @@ format_string = '<h50s'
 recognizer = sr.Recognizer()
 microphone = sr.Microphone()
 
+# hsv thresholds in this order: red, blue, green, other
+lower = [[0, 26, 0], [99, 133, 77], [34, 75, 74]]
+upper = [[41, 255, 255], [179, 255, 255], [70, 255, 255]]
 
+colors = ["red", "blue", "green"]
+
+# message
 seq = 1
 text = b'Hello World'
 # Pack data into binary format
@@ -49,8 +59,92 @@ def listen_for_speech():
         except sr.WaitTimeoutError:
             print("Speech recognition timed out.")
             return None
+        
+def detect_color():
+    cam = cv2.VideoCapture(0)
 
-# Server loop
+    #image = ep_camera.read_cv2_image(strategy="newest", timeout=0.5)
+    result, image = cam.read()
+    time.sleep(1)
+
+    result, image = cam.read()
+    time.sleep(1)
+
+    color_areas = []
+
+    if result:
+        image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        for i in range(3):
+            mask = cv2.inRange(image_hsv, np.array(lower[i]), np.array(upper[i]))
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            largest = 0
+            for c in contours:
+                a = cv2.contourArea(c)
+                if a > largest:
+                    largest = a
+
+            color_areas.append(largest)
+
+        max_index = 0
+        for i in range(1, 3):
+            if color_areas[i] > color_areas[max_index]:
+                max_index = i
+
+        print("Color detected: " + colors[max_index])
+
+        time.sleep(1)
+        cv2.destroyAllWindows()
+
+        return colors[max_index]
+
+def detect_color_at_square():
+    sent = False
+    while not sent:
+        connection, client_address = server_socket.accept()
+        try:
+            print("Connection from", client_address)
+
+            # Receive and unpack data from the client
+            data = connection.recv(struct.calcsize(format_string))
+            if data:
+                print("Data received")
+                unpacked_data = struct.unpack(format_string, data)
+                seq, client_text = unpacked_data
+                print(f"Received from client: seq={seq}, text={client_text.decode('utf-8').strip()}")
+
+                # Detect color
+                print("Starting detect color...")
+                color = detect_color()
+
+                # Set the default message if no command is recognized
+                message = color
+
+                print(message)
+
+                # Prepare the response packet
+                print("Starting to prepare response data")
+                packed_data = struct.pack(format_string, seq + 1, message.encode('utf-8'))
+                print(f"Sending packet: seq={seq}, text={message}")
+                connection.sendall(packed_data)  
+
+                if message == recognized_command:
+                    sent = True
+            else:
+                print("No data received from client.")
+                break
+        except:
+            print("Something went wrong")
+            sent = True
+        finally:
+            # Clean up the connection
+            connection.close()
+
+detect_color_at_square()
+detect_color_at_square()
+
+# audio
 sent = False
 while not sent:
     connection, client_address = server_socket.accept()
@@ -92,6 +186,12 @@ while not sent:
     finally:
         # Clean up the connection
         connection.close()
+
+detect_color_at_square()
+detect_color_at_square()
+detect_color_at_square()
+
+# color detection
 
 # # Create an instance of the struct data
 # seq = 1
