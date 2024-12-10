@@ -4,7 +4,7 @@
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-// #include <Wifi.h>
+#include <WiFi.h>
 
 #define RIGHT true
 #define LEFT false
@@ -71,9 +71,9 @@ float d_e;
 float total_e;
 
 // Assign values to the following feedback constants:
-const float Kp = 1;
-const float Kd = 0.35;
-const float Ki = 0;
+const float Kp = 1.75;
+const float Kd = 0.5;
+const float Ki = 0.05;
 
 const float mid = 6;
 
@@ -89,7 +89,118 @@ int turn;
 int STATE;
 int SQUARE_COUNT;
 
+int blue;
+int purple;
+int green;
+
+
+/*
+ *  WiFi code integration
+ */
+struct __attribute__((packed)) Data {
+    int16_t seq;     // sequence number
+    char text[50];   // text
+};
+
+// WiFi network credentials
+// const char* ssid = "ParksideUnit521";
+// const char* password = "BCQLMMDN";
+
+// Server IP and port
+// const char* host = "10.5.21.112";  // Replace with the IP address of server
+const uint16_t port = 9500;
+
+// Emily's House Settings
+const char* host = "10.0.0.79";  // Replace with the IP address of server
+const char* ssid = "luckytheratdog";
+const char* password = "Luckyblueberrymuffin382!";
+
 // Create a client
+WiFiClient client;
+
+int i_wifi = 1;
+char finalText[50];  // Store the final text after 500 loops
+
+String commWithServer(const String& message) {
+  WiFiClient client;
+  if (client.connect(host, port)) {
+    Serial.println("Connected to server");
+
+    // Send the message
+    client.println(message);
+    Serial.println("Message sent: " + message);
+
+    // Wait for a response
+    String response = "";
+    while (client.connected()) {
+      if (client.available()) {
+        response = client.readStringUntil('\n');
+        break;
+      }
+    }
+    // Close the connection
+    client.stop();
+    return response;
+  } else {
+    Serial.println("Connection to server failed");
+    return "Empty";
+  }
+}
+
+String runWiFiExchange() {
+  // Connect to server
+  if (!client.connect(host, port)) {
+    Serial.println("Connection to server failed.");
+    return "left";
+  }
+
+  Serial.println("Connected to server!");
+  int i_wifi = 1;
+
+  for (int attempt = 0; attempt < 10; attempt++) {
+    if (client.connected()) {
+      Serial.printf("Attempt %d: Listening for server messages...\n", attempt + 1);
+
+      // Wait for a message from the server
+      Data data;
+      strncpy(data.text, "direction", sizeof(data.text));
+      client.write((uint8_t*)&data, sizeof(data));
+
+      while (client.available()) {
+        char message[64] = {0}; // Initialize buffer to zero
+        Data response;
+        client.readBytes((char*)&response, sizeof(response));
+        Serial.printf("seq %d text %s\n", (int)response.seq, response.text);
+        // Store the latest response text
+        strncpy(finalText, response.text, sizeof(finalText) - 1);
+
+
+        Serial.printf("Received: %s\n", message);
+
+        // Check for "left" or "right"
+        if (strcmp(message, "left") == 0 || strcmp(message, "right") == 0) {
+          Serial.printf("Direction: %s\n", message);
+          return String(message); // Explicitly return a String object
+        }
+      }
+
+      // Add a small delay between retries
+      delay(500);
+    } else {
+      Serial.println("Disconnected from server. Reconnecting...");
+      if (client.connect(host, port)) {
+        Serial.println("Reconnected to server.");
+      } else {
+        Serial.println("Connection to server failed.");
+        return "left";
+      }
+    }
+  }
+
+  Serial.println("Failed to receive a valid message after multiple attempts.");
+  return "left";
+}
+
 
 /*
  *  Line sensor functions
@@ -222,7 +333,7 @@ void turnCorner(bool right, int right_wheel, int left_wheel) {
   } else {
     M1_backward(left_wheel);
     M2_forward(right_wheel);
-    delay(240);
+    delay(270);
   }
 
   // Stop the robot
@@ -353,6 +464,14 @@ void setup() {
     break;
   }
 
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
+
   turn = LEFT;
   STATE = DEFAULT_STATE;
 
@@ -373,12 +492,21 @@ void loop() {
 
     readADC();
     digitalConvert();
-    
-    Serial.println("forward");
 
     pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
     first_pos = pos;
-    Serial.println("Pos is "); Serial.println(pos);
+    // Serial.println("Pos is "); Serial.println(pos);
+
+    String response = commWithServer("direction");
+    if (!response.isEmpty()) {
+      Serial.println("Server says: " + response);
+    }
+
+    delay(1000);
+    continue;
+    
+
+    same = all_same();
 
     if (STATE == DEFAULT_STATE) {
       // Define the PID errors
@@ -423,9 +551,40 @@ void loop() {
 
       M1_forward(pidLeft);
       M2_forward(pidRight);
+    } else if (STATE == DOTTED_STATE) {
+      const float DKp = 4.0;
+      const float DKd = 0.5;
+      const float DKi = 0.1;
+
+      if (same == ALL_BLACK) {
+        M1_forward(80);
+        M2_forward(80);
+        p_e = 0;
+      } else {
+        // Define the PID errors
+        e = 6 - pos;
+        d_e = (e - p_e) / DT;
+        total_e += e*DT;
+
+        // Update the previous error
+        p_e = e;
+
+        // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+        u = DKp * e + DKd * d_e + DKi * total_e; //need to integrate e
+
+        // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+        pidLeft = constrain_pwm(80 + u);
+        pidRight = constrain_pwm(80 - u);
+
+        M1_forward(pidLeft);
+        M2_forward(pidRight);
+      }
+    } else if (STATE == GRID_STATE) {
+
     }
 
-    same = all_same();
+
+    // STATE TRANSITIONS
     // Serial.print("same: ");
     // Serial.println(same);
     if (STATE == DEFAULT_STATE) {
@@ -433,20 +592,11 @@ void loop() {
         stop();
         delay(1000);
 
-        // while(client.available()){
-        //   Data response;
-        //   client.readBytes((char*)&response, sizeof(response));
+        String message = runWiFiExchange();
+        bool audioTurn = message == "right";
 
-        //   if(response.text == "left"){
-        //     turnCorner(0, DEFAULT_PWM, DEFAULT_PWM);
-        //   }
-        //   else if(response.text == "right"){
-        //     turnCorner(1, DEFAULT_PWM, DEFAULT_PWM);
-        //   }
-        //   else if(response.text == "forward"){
-        //     Serial.printf("Forward");
-        //   }
-        // }
+        turnCorner(audioTurn, DEFAULT_PWM, DEFAULT_PWM);
+        
         STATE = DEFAULT_STATE;
 
       } else if (same == ALL_WHITE) { // AT SQUARE
@@ -464,6 +614,12 @@ void loop() {
         Serial.println(turn == RIGHT ? "right" : "left");
 
         turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+      } else if (SQUARE_COUNT == 2) {
+        if (lineArray[0] == 1 && lineArray[1] == 1 && lineArray[2] == 1) {
+          turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+        } else if (lineArray[11] == 1 && lineArray[12] == 1 && lineArray[10] == 1) {
+          turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+        }
       }
     } else if (STATE == SQUARE_STATE) {
       if (same == ALL_WHITE) { // time to exit square
@@ -472,18 +628,43 @@ void loop() {
         // turn right to leave square
         turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
 
-        if (SQUARE_COUNT == 2) {
+        if (SQUARE_COUNT == 4) {
           STATE = DOTTED_STATE;
+        } else if (SQUARE_COUNT == 5) {
+          STATE = GRID_STATE;
         } else {
           STATE = DEFAULT_STATE;
         }
       } else if (same == ALL_BLACK) { // trace corner in square
-        // inch_forward();
-        stop();
+        inch_forward(50);
 
         // turn left to trace square
         delay(100);
         turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+      }
+    } else if (STATE == DOTTED_STATE) {
+      if (same == ALL_WHITE) { // enter square
+        inch_forward(30);
+
+        // turn right to trace square
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+        STATE = SQUARE_STATE;
+        SQUARE_COUNT = 5;
+        
+        delay(100);
+      } 
+    } else if (STATE == GRID_STATE) {
+      if (same == ALL_WHITE) {
+        inch_forward(30);
+
+        // turn right to trace square
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+        STATE = SQUARE_STATE;
+        SQUARE_COUNT = 6;
+        
+        delay(100);
       }
     }
 
