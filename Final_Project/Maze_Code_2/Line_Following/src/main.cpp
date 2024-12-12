@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <Adafruit_MCP3008.h>
-#include <Encoder.h>
+#include <ESP32Encoder.h>
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -89,10 +89,15 @@ int turn;
 int STATE;
 int SQUARE_COUNT;
 
-int blue;
-int purple;
-int green;
+int BLUE_COUNT;
+int RED_COUNT;
+int GREEN_COUNT;
 
+
+String maxColor; 
+
+ESP32Encoder enc1;
+ESP32Encoder enc2;
 
 /*
  *  WiFi code integration
@@ -119,10 +124,8 @@ const char* password = "Luckyblueberrymuffin382!";
 WiFiClient client;
 
 int i_wifi = 1;
-char finalText[50];  // Store the final text after 500 loops
 
 String commWithServer(const String& message) {
-  WiFiClient client;
   if (client.connect(host, port)) {
     Serial.println("Connected to server");
 
@@ -143,64 +146,16 @@ String commWithServer(const String& message) {
     return response;
   } else {
     Serial.println("Connection to server failed");
-    return "Empty";
-  }
-}
-
-String runWiFiExchange() {
-  // Connect to server
-  if (!client.connect(host, port)) {
-    Serial.println("Connection to server failed.");
-    return "left";
-  }
-
-  Serial.println("Connected to server!");
-  int i_wifi = 1;
-
-  for (int attempt = 0; attempt < 10; attempt++) {
-    if (client.connected()) {
-      Serial.printf("Attempt %d: Listening for server messages...\n", attempt + 1);
-
-      // Wait for a message from the server
-      Data data;
-      strncpy(data.text, "direction", sizeof(data.text));
-      client.write((uint8_t*)&data, sizeof(data));
-
-      while (client.available()) {
-        char message[64] = {0}; // Initialize buffer to zero
-        Data response;
-        client.readBytes((char*)&response, sizeof(response));
-        Serial.printf("seq %d text %s\n", (int)response.seq, response.text);
-        // Store the latest response text
-        strncpy(finalText, response.text, sizeof(finalText) - 1);
-
-
-        Serial.printf("Received: %s\n", message);
-
-        // Check for "left" or "right"
-        if (strcmp(message, "left") == 0 || strcmp(message, "right") == 0) {
-          Serial.printf("Direction: %s\n", message);
-          return String(message); // Explicitly return a String object
-        }
-      }
-
-      // Add a small delay between retries
+    int i = 0;
+    while (WiFi.status() != WL_CONNECTED && i < 5) {
+      Serial.println("Wi-Fi disconnected. Reconnecting...");
+      WiFi.reconnect();
+      i++;
       delay(500);
-    } else {
-      Serial.println("Disconnected from server. Reconnecting...");
-      if (client.connect(host, port)) {
-        Serial.println("Reconnected to server.");
-      } else {
-        Serial.println("Connection to server failed.");
-        return "left";
-      }
-    }
+    } 
+    return "";
   }
-
-  Serial.println("Failed to receive a valid message after multiple attempts.");
-  return "left";
 }
-
 
 /*
  *  Line sensor functions
@@ -465,50 +420,118 @@ void setup() {
   }
 
   // Connect to Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to WiFi!");
+  // WiFi.begin(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   delay(500);
+  //   Serial.println("Connecting to WiFi...");
+  // }
+  // Serial.println("Connected to WiFi!");
+
+  ESP32Encoder::useInternalWeakPullResistors = puType::up; // Enable pull-up resistors
+  enc1.attachHalfQuad(M1_ENC_A, M1_ENC_B); // Attach pins
+  enc1.clearCount(); // Reset encoder count
+
+  enc2.attachHalfQuad(M2_ENC_B, M2_ENC_A); // Attach pins
+  enc2.clearCount(); // Reset encoder count
+
 
   turn = LEFT;
   STATE = DEFAULT_STATE;
 
   SQUARE_COUNT = 0;
 
+  BLUE_COUNT = 0;
+  RED_COUNT = 0;
+  GREEN_COUNT = 0;
+
+  maxColor = "red";
+
   delay(100);
 }
 
 
 void loop() {
-  
-  Encoder enc1(M1_ENC_A, M1_ENC_B);
-  Encoder enc2(M2_ENC_A, M2_ENC_B);
-  enc1.write(0);
-  enc2.write(0);
+  readADC();
+  digitalConvert();
 
-  while(true) {
+  pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  first_pos = pos;
+  // Serial.println("Pos is "); Serial.println(pos);
 
-    readADC();
-    digitalConvert();
+  long v1 = enc1.getCount();
+  long v2 = enc2.getCount();
 
-    pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
-    first_pos = pos;
-    // Serial.println("Pos is "); Serial.println(pos);
+  Serial.print("Encoder 1: "); Serial.println(v1);
+  Serial.print("Encoder 2: "); Serial.println(v2);
 
-    String response = commWithServer("direction");
-    if (!response.isEmpty()) {
-      Serial.println("Server says: " + response);
+  delay(200);
+  return;
+
+
+  // String response = commWithServer("direction");
+  // if (!response.isEmpty() && response != "invalid") {
+  //   Serial.println("Server says: " + response);
+  //   // turnCorner(response == "right", DEFAULT_PWM, DEFAULT_PWM);
+  // }
+
+  // delay(500);
+  // continue;
+
+  same = all_same();
+
+  if (STATE == DEFAULT_STATE) {
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
+
+    // Update the previous error
+    p_e = e;
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+
+    // TURNING LOGIC
+    if (lineArray[0] == 1) {
+      turn = RIGHT;
+    } else if (lineArray[12] == 1 && pos > 6) {
+      turn = LEFT;
     }
+  } else if (STATE == SQUARE_STATE) {
+    // Define the PID errors
+    e = 9 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
 
-    delay(1000);
-    continue;
-    
+    // Update the previous error
+    p_e = e;
 
-    same = all_same();
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
 
-    if (STATE == DEFAULT_STATE) {
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+  } else if (STATE == DOTTED_STATE) {
+    const float DKp = 4.0;
+    const float DKd = 0.5;
+    const float DKi = 0.1;
+
+    if (same == ALL_BLACK) {
+      M1_forward(80);
+      M2_forward(80);
+      p_e = 0;
+    } else {
       // Define the PID errors
       e = 6 - pos;
       d_e = (e - p_e) / DT;
@@ -518,156 +541,176 @@ void loop() {
       p_e = e;
 
       // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+      u = DKp * e + DKd * d_e + DKi * total_e; //need to integrate e
 
       // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
+      pidLeft = constrain_pwm(80 + u);
+      pidRight = constrain_pwm(80 - u);
 
       M1_forward(pidLeft);
       M2_forward(pidRight);
-
-      // TURNING LOGIC
-      if (lineArray[0] == 1) {
-        turn = RIGHT;
-      } else if (lineArray[12] == 1 && pos > 6) {
-        turn = LEFT;
-      }
-    } else if (STATE == SQUARE_STATE) {
-      // Define the PID errors
-      e = 9 - pos;
-      d_e = (e - p_e) / DT;
-      total_e += e*DT;
-
-      // Update the previous error
-      p_e = e;
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
-
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      pidLeft = constrain_pwm(90 + u);
-      pidRight = constrain_pwm(90 - u);
-
-      M1_forward(pidLeft);
-      M2_forward(pidRight);
-    } else if (STATE == DOTTED_STATE) {
-      const float DKp = 4.0;
-      const float DKd = 0.5;
-      const float DKi = 0.1;
-
-      if (same == ALL_BLACK) {
-        M1_forward(80);
-        M2_forward(80);
-        p_e = 0;
-      } else {
-        // Define the PID errors
-        e = 6 - pos;
-        d_e = (e - p_e) / DT;
-        total_e += e*DT;
-
-        // Update the previous error
-        p_e = e;
-
-        // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-        u = DKp * e + DKd * d_e + DKi * total_e; //need to integrate e
-
-        // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-        pidLeft = constrain_pwm(80 + u);
-        pidRight = constrain_pwm(80 - u);
-
-        M1_forward(pidLeft);
-        M2_forward(pidRight);
-      }
-    } else if (STATE == GRID_STATE) {
-
     }
+  } else if (STATE == GRID_STATE) {
+    // Define the PID errors
+    e = 6 - pos;
+    d_e = (e - p_e) / DT;
+    total_e += e*DT;
 
+    // Update the previous error
+    p_e = e;
 
-    // STATE TRANSITIONS
-    // Serial.print("same: ");
-    // Serial.println(same);
-    if (STATE == DEFAULT_STATE) {
-      if (same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
-        stop();
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+
+    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    pidLeft = constrain_pwm(90 + u);
+    pidRight = constrain_pwm(90 - u);
+
+    M1_forward(pidLeft);
+    M2_forward(pidRight);
+
+  }
+
+  // STATE TRANSITIONS
+  // Serial.print("same: ");
+  // Serial.println(same);
+  if (STATE == DEFAULT_STATE) {
+    if (same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
+      stop();
+      String message = "left";
+      for (int i = 0; i < 5; i++) {
+        message = commWithServer("direction");
+        if (!message.isEmpty() && message != "invalid") {
+          break;
+        }
         delay(1000);
-
-        String message = runWiFiExchange();
-        bool audioTurn = message == "right";
-
-        turnCorner(audioTurn, DEFAULT_PWM, DEFAULT_PWM);
-        
-        STATE = DEFAULT_STATE;
-
-      } else if (same == ALL_WHITE) { // AT SQUARE
-        inch_forward(30);
-
-        // turn right to trace square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        STATE = SQUARE_STATE;
-        SQUARE_COUNT++;
-        
-        delay(100);
-      } else if (same == ALL_BLACK) { // TURN CORNER
-        Serial.print("turn: ");
-        Serial.println(turn == RIGHT ? "right" : "left");
-
-        turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
-      } else if (SQUARE_COUNT == 2) {
-        if (lineArray[0] == 1 && lineArray[1] == 1 && lineArray[2] == 1) {
-          turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-        } else if (lineArray[11] == 1 && lineArray[12] == 1 && lineArray[10] == 1) {
-          turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
-        }
       }
-    } else if (STATE == SQUARE_STATE) {
-      if (same == ALL_WHITE) { // time to exit square
-        inch_forward(100);
+      bool audioTurn = message == "right" ? RIGHT : LEFT;
 
-        // turn right to leave square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(audioTurn, DEFAULT_PWM, DEFAULT_PWM);
+      
+      STATE = DEFAULT_STATE;
 
-        if (SQUARE_COUNT == 4) {
-          STATE = DOTTED_STATE;
-        } else if (SQUARE_COUNT == 5) {
-          STATE = GRID_STATE;
-        } else {
-          STATE = DEFAULT_STATE;
+    } else if (same == ALL_WHITE) { // AT SQUARE
+      stop(); 
+
+      String message = "red";
+      for (int i = 0; i < 5; i++) {
+        message = commWithServer("circle");
+        if (!message.isEmpty() && message != "invalid") {
+          break;
         }
-      } else if (same == ALL_BLACK) { // trace corner in square
-        inch_forward(50);
+        delay(1000);
+      }
 
-        // turn left to trace square
-        delay(100);
+      if (message == "red") {
+        RED_COUNT++;
+      } else if (message == "blue") {
+        BLUE_COUNT++;
+      } else if (message == "green") {
+        GREEN_COUNT++;
+      }
+
+      inch_forward(30);
+
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
+      SQUARE_COUNT++;
+      
+      delay(100);
+    } else if (same == ALL_BLACK) { // TURN CORNER
+      Serial.print("turn: ");
+      Serial.println(turn == RIGHT ? "right" : "left");
+
+      turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+    } else if (SQUARE_COUNT == 2) {
+      if (lineArray[0] == 1 && lineArray[1] == 1 && lineArray[2] == 1) {
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      } else if (lineArray[11] == 1 && lineArray[12] == 1 && lineArray[10] == 1) {
         turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
       }
-    } else if (STATE == DOTTED_STATE) {
-      if (same == ALL_WHITE) { // enter square
-        inch_forward(30);
-
-        // turn right to trace square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        STATE = SQUARE_STATE;
-        SQUARE_COUNT = 5;
-        
-        delay(100);
-      } 
-    } else if (STATE == GRID_STATE) {
-      if (same == ALL_WHITE) {
-        inch_forward(30);
-
-        // turn right to trace square
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-        STATE = SQUARE_STATE;
-        SQUARE_COUNT = 6;
-        
-        delay(100);
-      }
     }
+  } else if (STATE == SQUARE_STATE) {
+    if (same == ALL_WHITE) { // time to exit square
+      inch_forward(100);
 
-    delay(50);
+      // turn right to leave square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      if (SQUARE_COUNT == 4) {
+        STATE = DOTTED_STATE;
+      } else if (SQUARE_COUNT == 5) {
+        STATE = GRID_STATE;
+        if (BLUE_COUNT > RED_COUNT && BLUE_COUNT > GREEN_COUNT) {
+          maxColor = "blue";
+        } else if (RED_COUNT > BLUE_COUNT && RED_COUNT > GREEN_COUNT) {
+          maxColor = "red";
+        } else {
+          maxColor = "green";
+        }
+
+      } else {
+        STATE = DEFAULT_STATE;
+      }
+    } else if (same == ALL_BLACK) { // trace corner in square
+      inch_forward(50);
+
+      // turn left to trace square
+      delay(100);
+      turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+    }
+  } else if (STATE == DOTTED_STATE) {
+    if (same == ALL_WHITE) { // enter square
+      inch_forward(30);
+
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
+      SQUARE_COUNT = 5;
+      
+      delay(100);
+    } 
+  } else if (STATE == GRID_STATE) {
+    if (same == ALL_BLACK || lineArray[0] == 1) {
+      stop();
+      String message;
+      for (int i = 0; i < 5; i++) {
+        message = commWithServer(maxColor);
+        if (!message.isEmpty() && message != "invalid") {
+          break;
+        }
+        delay(1000);
+      }
+
+      inch_forward(50);
+
+      if (message == "left") {
+        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+      } else if (message == "right") {
+        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      } else {
+        inch_forward(50);
+        STATE = GRID_STATE;
+      }
+
+
+    }
+    else if (same == ALL_WHITE) {
+      inch_forward(30);
+
+      // turn right to trace square
+      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+
+      STATE = SQUARE_STATE;
+      SQUARE_COUNT = 6;
+      
+      delay(100);
+    }
   }
+
+  delay(50);
+
 }

@@ -5,16 +5,22 @@ import time
 import cv2
 import numpy as np
 
+from pydub import AudioSegment
+from pydub.playback import play
+import io
+
 # Host IP and port
-HOST = '10.5.21.112'  # Replace with your server's IP
+HOST = '10.0.0.79'  # Replace with your server's IP
 PORT = 9500           # Arbitrary non-privileged port (>1024)
 
 RECOGNIZER = sr.Recognizer()
 MICROPHONE = sr.Microphone()
 
+RECOGNIZER.energy_threshold = 200
+
 COLORS = ["red", "red", "green", "blue"]
 # hsv thresholds in this order: red, blue, green, other
-LOWER = [[0, 100, 100], [160, 100, 100], [35, 50, 100], [100, 100, 100]]
+LOWER = [[0, 100, 100], [160, 100, 100], [35, 100, 100], [100, 100, 100]]
 UPPER = [[25, 255, 255], [180, 255, 255], [85, 255, 255], [140, 255, 255]]
 
 CAM = cv2.VideoCapture(0)
@@ -50,16 +56,16 @@ def start_server(host, port):
             client_socket.sendall(command.encode('utf-8'))
             print(f"Sent audio command: {command}")
           else:
-            client_socket.sendall("invalid command\n".encode('utf-8'))
-            print("Sent: invalid command")
+            client_socket.sendall("invalid\n".encode('utf-8'))
+            print("Sent: invalid")
         elif data == "circle":
           color = detect_color()
           if color:
             client_socket.sendall(f"{color}\n".encode('utf-8'))
             print(f"Sent color: {color}")
           else:
-            client_socket.sendall("invalid color\n".encode('utf-8'))
-            print("Sent: invalid color")
+            client_socket.sendall("invalid\n".encode('utf-8'))
+            print("Sent: invalid")
           
         elif data == "grid":
           pass
@@ -71,14 +77,43 @@ def start_server(host, port):
   finally:
       server_socket.close()
 
+def process_audio(audio):
+  audio_data = io.BytesIO(audio.get_wav_data())  # Convert to a file-like object
+
+  # Load audio into pydub
+  original_audio = AudioSegment.from_wav(audio_data)
+  # read suffix file
+  suffix_audio = AudioSegment.from_wav("audio/turn.wav")
+
+  # Triple the audio
+  combined_audio = original_audio + suffix_audio
+
+
+  output_audio = io.BytesIO()
+  combined_audio.export(output_audio, format="wav")
+
+  # Rewind the BytesIO object to the beginning so that speech_recognition can read it
+  output_audio.seek(0)
+
+  # Now, create a new SpeechRecognition audio object from the BytesIO data
+  audio = sr.AudioData(output_audio.read(), original_audio.frame_rate, original_audio.sample_width)
+
+  return RECOGNIZER.recognize_google(audio).lower()
+
+
 # Function to listen for "left" or "right"
 def listen_for_speech():
   with MICROPHONE as source:
     print("Listening for speech...")
     try:
-      audio = RECOGNIZER.listen(source, timeout=3, phrase_time_limit=3)
+      audio = RECOGNIZER.record(source, duration=2)
+      # text = process_audio(audio)
       text = RECOGNIZER.recognize_google(audio).lower()
-      print("Finished listening.")
+
+      # # save audio as wv file
+      # with open(f"audio/{text}.wav", "wb") as f:
+      #   f.write(audio.get_wav_data())
+
       print(f"Recognized speech: {text}")
       if "left" in text:
           return "left"
@@ -100,7 +135,7 @@ def detect_color():
 
   #image = ep_CAMera.read_cv2_image(strategy="newest", timeout=0.5)
   result, image = CAM.read()
-  cv2.imshow('Image Viewer', image)
+  # cv2.imshow('Image Viewer', image)
 
   color_areas = []
 
@@ -133,17 +168,89 @@ def detect_color():
 
   return None
 
+def detect_grid_path(color, image=None):
+  if color == "red":
+    index = [0, 1]
+  elif color == "green":
+    index = [2]
+  else:
+    index = [3]
+  
+
+  if image is None:
+    result, image = CAM.read()
+    image = cv2.rotate(image, cv2.ROTATE_180)
+
+  color_areas = []
+
+  if image is not None or result:
+    image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+  for i in index:
+    mask = cv2.inRange(image_hsv, np.array(LOWER[i]), np.array(UPPER[i]))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    largest = 0
+    center = None
+
+    for c in contours:
+        M = cv2.moments(c)
+        if M["m00"] != 0:
+          cx = int(M['m10']/M['m00'])
+          cy = int(M['m01']/M['m00'])
+        a = cv2.contourArea(c)
+        if a > largest:
+            largest = a
+            center = (cx, cy)
+
+    color_areas.append((largest, center))
+
+  if center is None:
+    return "other"
+  center = color_areas[0][1]
+  
+  if color == "red":
+    if color_areas[0][0] > color_areas[1][0]:
+      center = color_areas[0][1]
+    else:
+      center = color_areas[1][1]
+  
+  # mark center on image and show
+  cv2.circle(image, center, 5, (0, 0, 255), -1)
+  cv2.imshow('Image Viewer', image)
+  cv2.waitKey(0)
+
+  image_width = image.shape[1]
+  image_height = image.shape[0]
+  # if center is clearly on the left
+  if center[0] < image_width / 3:
+    return "left"
+  elif center[0] > 2 * image_width / 3:
+    return "right"
+  elif center[1] < image_height / 3:
+    return "straight"
+  
+  return "other"
+
+  
+
 
 if __name__ == "__main__":
+  # time.sleep(2)
+  while True:
+    for color in COLORS[1:]:
+      print(color)
+      print(detect_grid_path(color))
+  # for phrase in LiveSpeech():
+  #   print(phrase)
     # start_server(HOST, PORT)
-    time.sleep(2)
-    while True:
-      detect_color()
+    # while True:
+    #   detect_color()
 
-      key = cv2.waitKey(2000) & 0xFF
-      if key == ord('q'):
-        break
+    #   key = cv2.waitKey(2000) & 0xFF
+    #   if key == ord('q'):
+    #     break
     
-    CAM.release()
-    cv2.destroyAllWindows()
+    # CAM.release()
+    # cv2.destroyAllWindows()
       

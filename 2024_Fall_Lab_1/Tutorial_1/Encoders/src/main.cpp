@@ -1,36 +1,45 @@
 #include <Arduino.h>
-#include <Encoder.h>
+#include <ESP32Encoder.h>
 
 const unsigned int M1_ENC_A = 39;
 const unsigned int M1_ENC_B = 38;
 const unsigned int M2_ENC_A = 37;
 const unsigned int M2_ENC_B = 36;
 
+const unsigned int M2_IN_1 = 25;
+const unsigned int M2_IN_2 = 14;
+
+ESP32Encoder enc1;
+ESP32Encoder enc2;
+
+
 
 void setup() {
-  // Stop the right motor by setting pin 14 low
-  // this pin floats high or is pulled
-  // high during the bootloader phase for some reason
-  pinMode(14, OUTPUT);
-  digitalWrite(14, LOW);
-  delay(100);
-
-
   Serial.begin(115200);
+
+  ESP32Encoder::useInternalWeakPullResistors = puType::up; // Enable pull-up resistors
+  enc1.attachHalfQuad(M1_ENC_A, M1_ENC_B); // Attach pins
+  enc1.clearCount(); // Reset encoder count
+
+  enc2.attachHalfQuad(M2_ENC_B, M2_ENC_A); // Attach pins
+  enc2.clearCount(); // Reset encoder count
+
+  // set to low
+  pinMode(M2_IN_1, OUTPUT);
+  digitalWrite(M2_IN_1, LOW);
+  pinMode(M2_IN_2, OUTPUT);
+  digitalWrite(M2_IN_2, LOW);
+
 }
 
 void loop() {
-  // Create the encoder objects after the motor has
-  // stopped, else some sort exception is triggered
-  Encoder enc1(M1_ENC_A, M1_ENC_B);
-  Encoder enc2(M2_ENC_A, M2_ENC_B);
+  long position = enc1.getCount(); // Read position
+  Serial.print("Encoder 1: ");
+  Serial.println(position);
 
-  while(true) {
-    long enc1_value = enc1.read();
-    long enc2_value = enc2.read();
+  position = enc2.getCount(); // Read position
+  Serial.print("Encoder 2: ");
+  Serial.println(position);
 
-    Serial.println(enc1_value);
-    Serial.println(enc2_value);
-    Serial.println("");
-  }
+  delay(100);
 }
