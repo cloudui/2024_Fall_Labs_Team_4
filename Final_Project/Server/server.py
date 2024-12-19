@@ -10,7 +10,7 @@ from pydub.playback import play
 import io
 
 # Host IP and port
-HOST = '10.0.0.79'  # Replace with your server's IP
+HOST = '172.20.10.12'  # Replace with your server's IP
 PORT = 9500           # Arbitrary non-privileged port (>1024)
 
 RECOGNIZER = sr.Recognizer()
@@ -20,7 +20,7 @@ RECOGNIZER.energy_threshold = 200
 
 COLORS = ["red", "red", "green", "blue"]
 # hsv thresholds in this order: red, blue, green, other
-LOWER = [[0, 100, 100], [160, 100, 100], [35, 100, 100], [100, 100, 100]]
+LOWER = [[0, 100, 100], [160, 100, 100], [35, 100, 100], [100, 50, 100]]
 UPPER = [[25, 255, 255], [180, 255, 255], [85, 255, 255], [140, 255, 255]]
 
 CAM = cv2.VideoCapture(0)
@@ -67,9 +67,12 @@ def start_server(host, port):
             client_socket.sendall("invalid\n".encode('utf-8'))
             print("Sent: invalid")
           
-        elif data == "grid":
-          pass
-          
+        elif data == "red" or data == "green" or data == "blue":
+          direction = detect_grid_path(data)
+          if direction:
+            client_socket.sendall(f"{direction}\n".encode('utf-8'))
+            print(f"Sent turn: {direction}")
+
           # Close the client connection
         client_socket.close()
   except KeyboardInterrupt:
@@ -206,7 +209,7 @@ def detect_grid_path(color, image=None):
     color_areas.append((largest, center))
 
   if center is None:
-    return "other"
+    return "invalid"
   center = color_areas[0][1]
   
   if color == "red":
@@ -215,35 +218,33 @@ def detect_grid_path(color, image=None):
     else:
       center = color_areas[1][1]
   
-  # mark center on image and show
   cv2.circle(image, center, 5, (0, 0, 255), -1)
   cv2.imshow('Image Viewer', image)
-  cv2.waitKey(0)
+  cv2.waitKey(1000)
 
   image_width = image.shape[1]
   image_height = image.shape[0]
   # if center is clearly on the left
-  if center[0] < image_width / 3:
-    return "left"
-  elif center[0] > 2 * image_width / 3:
-    return "right"
-  elif center[1] < image_height / 3:
+  if center[1] < 2 * image_height / 3:
     return "straight"
+  if center[0] < image_width / 2:
+    return "left"
+  elif center[0] > image_width / 2:
+    return "right"
   
-  return "other"
+  return "invalid"
 
-  
 
 
 if __name__ == "__main__":
-  # time.sleep(2)
-  while True:
-    for color in COLORS[1:]:
-      print(color)
-      print(detect_grid_path(color))
+  time.sleep(2)
+  # while True:
+  #   for color in COLORS[1:]:
+  #     print(color)
+  #     print(detect_grid_path(color))
   # for phrase in LiveSpeech():
   #   print(phrase)
-    # start_server(HOST, PORT)
+  start_server(HOST, PORT)
     # while True:
     #   detect_color()
 

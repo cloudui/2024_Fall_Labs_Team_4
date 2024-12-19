@@ -1,6 +1,7 @@
-#include <Arduino.h>
 #include <Adafruit_MCP3008.h>
+#include <Arduino.h>
 #include <ESP32Encoder.h>
+
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -35,7 +36,7 @@ Adafruit_MCP3008 adc2;
 int adc1_buf[8];
 int adc2_buf[8];
 
-uint8_t lineArray[13]; 
+uint8_t lineArray[13];
 
 // Encoders
 const unsigned int M1_ENC_A = 39;
@@ -72,7 +73,7 @@ float total_e;
 
 // Assign values to the following feedback constants:
 const float Kp = 1.75;
-const float Kd = 0.5;
+const float Kd = 0.3;
 const float Ki = 0.05;
 
 const float mid = 6;
@@ -84,7 +85,7 @@ int pidLeft;
 
 float pos;
 float first_pos;
-int same; 
+int same;
 int turn;
 int STATE;
 int SQUARE_COUNT;
@@ -93,8 +94,13 @@ int BLUE_COUNT;
 int RED_COUNT;
 int GREEN_COUNT;
 
+int left_count = 0;
+int right_count = 0;
+int straight_count = 0;
 
-String maxColor; 
+String maxColor;
+
+bool audioFlag = true;
 
 ESP32Encoder enc1;
 ESP32Encoder enc2;
@@ -103,8 +109,8 @@ ESP32Encoder enc2;
  *  WiFi code integration
  */
 struct __attribute__((packed)) Data {
-    int16_t seq;     // sequence number
-    char text[50];   // text
+  int16_t seq;   // sequence number
+  char text[50]; // text
 };
 
 // WiFi network credentials
@@ -116,16 +122,34 @@ struct __attribute__((packed)) Data {
 const uint16_t port = 9500;
 
 // Emily's House Settings
-const char* host = "10.0.0.79";  // Replace with the IP address of server
-const char* ssid = "luckytheratdog";
-const char* password = "Luckyblueberrymuffin382!";
+const char *host = "172.20.10.12"; // Replace with the IP address of server
+const char *ssid = "iPhone (18)";
+const char *password = "lillit12";
 
 // Create a client
 WiFiClient client;
 
 int i_wifi = 1;
 
-String commWithServer(const String& message) {
+bool findGap() {
+  // find gap of 2 or 3 black consecutive lines inbetween white ones
+  int count = 0;
+  for (int i = 1; i < 12; i++) {
+    if (lineArray[i] == 0) {
+      count++;
+    } else {
+      count = 0;
+    }
+
+    if (count >= 2) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+String commWithServer(const String &message) {
   if (client.connect(host, port)) {
     Serial.println("Connected to server");
 
@@ -152,7 +176,7 @@ String commWithServer(const String& message) {
       WiFi.reconnect();
       i++;
       delay(500);
-    } 
+    }
     return "";
   }
 }
@@ -162,15 +186,16 @@ String commWithServer(const String& message) {
  */
 void readADC() {
   for (int i = 0; i < 8; i++) {
-    adc1_buf[i] = adc1.readADC(i) > 690 ? 0 : 1;
-    adc2_buf[i] = adc2.readADC(i) > 690 ? 0 : 1;
+
+    adc1_buf[i] = adc1.readADC(i) < 690 ? 1 : 0;
+    adc2_buf[i] = adc2.readADC(i) < 690 ? 1 : 0;
   }
 }
 
-int32_t all_same(){
-  if(adc1_buf[0] == 1){
-    for(int i = 0; i < 8; i++) {
-      if((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)){
+int32_t all_same() {
+  if (adc1_buf[0] == 1) {
+    for (int i = 0; i < 8; i++) {
+      if ((i < 7 && adc1_buf[i] != 1) || (i < 6 && adc2_buf[i] != 1)) {
         return NOT_ALL_SAME;
       }
     }
@@ -178,9 +203,9 @@ int32_t all_same(){
     return ALL_WHITE;
   }
 
-  else{
-    for(int i = 0; i < 8; i++) {
-      if((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)){
+  else {
+    for (int i = 0; i < 8; i++) {
+      if ((i < 7 && adc1_buf[i] != 0) || (i < 6 && adc2_buf[i] != 0)) {
         return NOT_ALL_SAME;
       }
     }
@@ -189,13 +214,16 @@ int32_t all_same(){
   }
 }
 
-// Converts ADC readings to binary array lineArray[] (Check threshold for your robot) 
+// Converts ADC readings to binary array lineArray[] (Check threshold for your
+// robot)
 void digitalConvert() {
   for (int i = 0; i < 7; i++) {
-    lineArray[2*i] = adc1_buf[i];
+    lineArray[2 * i] = adc1_buf[i];
+    // Serial.println(adc1_buf[i]);
 
     if (i < 6) {
-      lineArray[2*i + 1] = adc2_buf[i];
+      // Serial.println(adc2_buf[i]);
+      lineArray[2 * i + 1] = adc2_buf[i];
     }
 
     // // print line sensor position
@@ -205,21 +233,21 @@ void digitalConvert() {
   }
 }
 
-float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool values)
-    int count = 0;
-    float sum = 0;
-    for (int i = 0; i < 13; i++) {
-        if (lineArray[i] == 1) {
-            sum += i;  
-            count++;         
-        }
+float getPosition(
+    uint8_t lineArray[13]) { // passing lineArray values (13 bool values)
+  int count = 0;
+  float sum = 0;
+  for (int i = 0; i < 13; i++) {
+    if (lineArray[i] == 1) {
+      sum += i;
+      count++;
     }
-    if (count == 0) {
-        return 6.0;
-    }
-    return sum/count;
+  }
+  if (count == 0) {
+    return 6.0;
+  }
+  return sum / count;
 }
-
 
 /*
  *  Movement functions
@@ -227,13 +255,12 @@ float getPosition(uint8_t lineArray[13]) { //passing lineArray values (13 bool v
 void M1_forward(int pwm_value) {
   ledcWrite(M1_IN_1_CHANNEL, 0);
   ledcWrite(M1_IN_2_CHANNEL, pwm_value);
-  //Serial.println("I got to M1FWD ");
-
+  // Serial.println("I got to M1FWD ");
 }
 void M2_forward(int pwm_value) {
   ledcWrite(M2_IN_1_CHANNEL, 0);
   ledcWrite(M2_IN_2_CHANNEL, pwm_value);
-  //Serial.println("I got to M2FWD ");
+  // Serial.println("I got to M2FWD ");
 }
 
 void M1_backward(int pwm_value) {
@@ -254,6 +281,11 @@ void M2_stop() {
   ledcWrite(M2_IN_2_CHANNEL, 0);
 }
 
+void stop() {
+  M1_stop();
+  M2_stop();
+}
+
 int constrain_pwm(int pwm) {
   if (pwm > PWM_MAX) {
     return PWM_MAX;
@@ -264,6 +296,54 @@ int constrain_pwm(int pwm) {
   }
 }
 
+void inch(int time, bool direction) {
+  int pwm1 = DEFAULT_PWM; // Initial PWM for motor 1
+  int pwm2 = DEFAULT_PWM; // Initial PWM for motor 2
+  int error = 0;
+  int lastError = 0;
+  int integral = 0;
+  int derivative = 0;
+  float Kp = 1.5, Ki = 0.1, Kd = 0.05; // PID gains
+
+  enc1.clearCount();
+  enc2.clearCount();
+
+  stop();
+  delay(300);
+  // while time elapsed < time
+  int start_time = millis();
+
+  while (millis() - start_time < time) {
+    // Calculate errors
+    error = abs(enc1.getCount()) - abs(enc2.getCount());
+
+    integral += error;
+    derivative = error - lastError;
+    lastError = error;
+
+    // Adjust PWM values based on PID output
+    int adjustment = Kp * error + Ki * integral + Kd * derivative;
+
+    pwm1 = DEFAULT_PWM - adjustment; // Adjust motor 1
+    pwm2 = DEFAULT_PWM + adjustment; // Adjust motor 2
+
+    // Clamp PWM values to prevent overflow
+    pwm1 = constrain(pwm1, 0, 255);
+    pwm2 = constrain(pwm2, 0, 255);
+
+    if (direction) {
+      M1_forward(pwm1);
+      M2_forward(pwm2);
+    } else {
+      M1_backward(pwm1);
+      M2_backward(pwm2);
+    }
+  }
+
+  stop();
+}
+
+
 void inch_forward(int time) {
   M1_forward(DEFAULT_PWM);
   M2_forward(DEFAULT_PWM);
@@ -272,40 +352,82 @@ void inch_forward(int time) {
   M2_stop();
 }
 
-void stop() {
+void inch_backward(int time) {
+  M1_forward(DEFAULT_PWM);
+  M2_forward(DEFAULT_PWM);
+  delay(time);
   M1_stop();
   M2_stop();
 }
 
-void turnCorner(bool right, int right_wheel, int left_wheel) {
+
+void turnCorner(bool right) {
+  int counts = 95;        // Target encoder count
+  int pwm1 = DEFAULT_PWM; // Initial PWM for motor 1
+  int pwm2 = DEFAULT_PWM; // Initial PWM for motor 2
+  int error = 0;
+  int lastError = 0;
+  int integral = 0;
+  int derivative = 0;
+  float Kp = 1.5, Ki = 0.1, Kd = 0.05; // PID gains
+
   stop();
   delay(500);
 
-  if (right) {
-    M1_forward(left_wheel);
-    M2_backward(right_wheel);
-    delay(270);
-  } else {
-    M1_backward(left_wheel);
-    M2_forward(right_wheel);
-    delay(270);
+  enc1.clearCount();
+  enc2.clearCount();
+
+  while (abs(enc1.getCount()) < counts && abs(enc2.getCount()) < counts) {
+    // Calculate errors
+    error = abs(enc1.getCount()) - abs(enc2.getCount());
+
+    integral += error;
+    derivative = error - lastError;
+    lastError = error;
+
+    // Adjust PWM values based on PID output
+    int adjustment = Kp * error + Ki * integral + Kd * derivative;
+
+    pwm1 = DEFAULT_PWM - adjustment; // Adjust motor 1
+    pwm2 = DEFAULT_PWM + adjustment; // Adjust motor 2
+
+    // Clamp PWM values to prevent overflow
+    pwm1 = constrain(pwm1, 0, 255);
+    pwm2 = constrain(pwm2, 0, 255);
+
+    // Apply motor commands based on direction
+    if (right) {
+      M1_forward(pwm1);
+      M2_backward(pwm2);
+    } else {
+      M1_backward(pwm1);
+      M2_forward(pwm2);
+    }
+
+    delay(10); // Small delay to stabilize the loop
   }
 
+  Serial.print("Enc1: ");
+  Serial.println(enc1.getCount());
+  Serial.print("Enc2: ");
+  Serial.println(enc2.getCount());
+
   // Stop the robot
-  M1_stop();
-  M2_stop();
+  stop();
 
   delay(100);
 }
 
-void printADC(){
+void printADC() {
   for (int i = 0; i < 8; i++) {
-    if (i<7) {
-      Serial.print(adc1_buf[i]); Serial.print("\t");
+    if (i < 7) {
+      Serial.print(adc1_buf[i]);
+      Serial.print("\t");
     }
 
-    if (i<6) {
-      Serial.print(adc2_buf[i]); Serial.print("\t");
+    if (i < 6) {
+      Serial.print(adc2_buf[i]);
+      Serial.print("\t");
     }
   }
   Serial.println("");
@@ -330,7 +452,7 @@ void setup() {
   ledcAttachPin(M2_IN_1, M2_IN_1_CHANNEL);
   ledcAttachPin(M2_IN_2, M2_IN_2_CHANNEL);
 
-  adc1.begin(ADC_1_CS);  
+  adc1.begin(ADC_1_CS);
   adc2.begin(ADC_2_CS);
 
   pinMode(M1_I_SENSE, INPUT);
@@ -339,7 +461,7 @@ void setup() {
   stop();
 
   // IMU Stop
-  
+
   while (!Serial)
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
 
@@ -420,28 +542,28 @@ void setup() {
   }
 
   // Connect to Wi-Fi
-  // WiFi.begin(ssid, password);
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   delay(500);
-  //   Serial.println("Connecting to WiFi...");
-  // }
-  // Serial.println("Connected to WiFi!");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
 
-  ESP32Encoder::useInternalWeakPullResistors = puType::up; // Enable pull-up resistors
+  ESP32Encoder::useInternalWeakPullResistors =
+      puType::up;                          // Enable pull-up resistors
   enc1.attachHalfQuad(M1_ENC_A, M1_ENC_B); // Attach pins
-  enc1.clearCount(); // Reset encoder count
+  enc1.clearCount();                       // Reset encoder count
 
   enc2.attachHalfQuad(M2_ENC_B, M2_ENC_A); // Attach pins
-  enc2.clearCount(); // Reset encoder count
-
+  enc2.clearCount();                       // Reset encoder count
 
   turn = LEFT;
-  STATE = DEFAULT_STATE;
+  STATE = GRID_STATE;
 
-  SQUARE_COUNT = 0;
+  SQUARE_COUNT = 5;
 
   BLUE_COUNT = 0;
-  RED_COUNT = 0;
+  RED_COUNT = 100;
   GREEN_COUNT = 0;
 
   maxColor = "red";
@@ -449,24 +571,32 @@ void setup() {
   delay(100);
 }
 
-
 void loop() {
   readADC();
   digitalConvert();
 
-  pos = getPosition(lineArray); //passing lineArray to function which contains 13 boolean values
+  pos = getPosition(lineArray); // passing lineArray to function which contains
+                                // 13 boolean values
   first_pos = pos;
+
+  // for (int i = 0; i < 13; i++)
+  // {
+  //   Serial.print(lineArray[i]);
+  //   Serial.print(" ");
+  // }
+
+  // Serial.println("");
+  // delay(2000);
+  // return;
   // Serial.println("Pos is "); Serial.println(pos);
+  // return;
+  // turnCorner(RIGHT);
 
-  long v1 = enc1.getCount();
-  long v2 = enc2.getCount();
+  // delay(1000);
+  // turnCorner(LEFT);
 
-  Serial.print("Encoder 1: "); Serial.println(v1);
-  Serial.print("Encoder 2: "); Serial.println(v2);
-
-  delay(200);
-  return;
-
+  // delay(1000);
+  // return;
 
   // String response = commWithServer("direction");
   // if (!response.isEmpty() && response != "invalid") {
@@ -475,7 +605,7 @@ void loop() {
   // }
 
   // delay(500);
-  // continue;
+  // return;
 
   same = all_same();
 
@@ -483,17 +613,19 @@ void loop() {
     // Define the PID errors
     e = 6 - pos;
     d_e = (e - p_e) / DT;
-    total_e += e*DT;
+    total_e += e * DT;
 
     // Update the previous error
     p_e = e;
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; // need to integrate e
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    pidLeft = constrain_pwm(90 + u);
-    pidRight = constrain_pwm(90 - u);
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
+    pidLeft = constrain_pwm(85 + u);
+    pidRight = constrain_pwm(85 - u);
 
     M1_forward(pidLeft);
     M2_forward(pidRight);
@@ -501,24 +633,26 @@ void loop() {
     // TURNING LOGIC
     if (lineArray[0] == 1) {
       turn = RIGHT;
-    } else if (lineArray[12] == 1 && pos > 6) {
+    } else if (lineArray[12] == 1) {
       turn = LEFT;
     }
   } else if (STATE == SQUARE_STATE) {
     // Define the PID errors
     e = 9 - pos;
     d_e = (e - p_e) / DT;
-    total_e += e*DT;
+    total_e += e * DT;
 
     // Update the previous error
     p_e = e;
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; // need to integrate e
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    pidLeft = constrain_pwm(90 + u);
-    pidRight = constrain_pwm(90 - u);
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
+    pidLeft = constrain_pwm(85 + u);
+    pidRight = constrain_pwm(85 - u);
 
     M1_forward(pidLeft);
     M2_forward(pidRight);
@@ -535,15 +669,17 @@ void loop() {
       // Define the PID errors
       e = 6 - pos;
       d_e = (e - p_e) / DT;
-      total_e += e*DT;
+      total_e += e * DT;
 
       // Update the previous error
       p_e = e;
 
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-      u = DKp * e + DKd * d_e + DKi * total_e; //need to integrate e
+      // Implement PID control (include safeguards for when the PWM values go
+      // below 0 or exceed maximum)
+      u = DKp * e + DKd * d_e + DKi * total_e; // need to integrate e
 
-      // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+      // Implement PID control (include safeguards for when the PWM values go
+      // below 0 or exceed maximum)
       pidLeft = constrain_pwm(80 + u);
       pidRight = constrain_pwm(80 - u);
 
@@ -554,31 +690,32 @@ void loop() {
     // Define the PID errors
     e = 6 - pos;
     d_e = (e - p_e) / DT;
-    total_e += e*DT;
+    total_e += e * DT;
 
     // Update the previous error
     p_e = e;
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
-    u = Kp * e + Kd * d_e + Ki * total_e; //need to integrate e
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
+    u = Kp * e + Kd * d_e + Ki * total_e; // need to integrate e
 
-    // Implement PID control (include safeguards for when the PWM values go below 0 or exceed maximum)
+    // Implement PID control (include safeguards for when the PWM values go
+    // below 0 or exceed maximum)
     pidLeft = constrain_pwm(90 + u);
     pidRight = constrain_pwm(90 - u);
 
     M1_forward(pidLeft);
     M2_forward(pidRight);
-
   }
 
   // STATE TRANSITIONS
   // Serial.print("same: ");
   // Serial.println(same);
   if (STATE == DEFAULT_STATE) {
-    if (same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
+    if (!audioFlag && same == ALL_WHITE && SQUARE_COUNT == 2) { // WAIT FOR AUDIO
       stop();
       String message = "left";
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < 10; i++) {
         message = commWithServer("direction");
         if (!message.isEmpty() && message != "invalid") {
           break;
@@ -587,15 +724,16 @@ void loop() {
       }
       bool audioTurn = message == "right" ? RIGHT : LEFT;
 
-      turnCorner(audioTurn, DEFAULT_PWM, DEFAULT_PWM);
-      
-      STATE = DEFAULT_STATE;
+      inch_forward(70);
+      turnCorner(audioTurn);
 
+      STATE = DEFAULT_STATE;
+      audioFlag = true;
     } else if (same == ALL_WHITE) { // AT SQUARE
-      stop(); 
+      stop();
 
       String message = "red";
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < 10; i++) {
         message = commWithServer("circle");
         if (!message.isEmpty() && message != "invalid") {
           break;
@@ -611,33 +749,33 @@ void loop() {
         GREEN_COUNT++;
       }
 
-      inch_forward(30);
+      inch_forward(100);
 
       // turn right to trace square
-      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(RIGHT);
 
       STATE = SQUARE_STATE;
       SQUARE_COUNT++;
-      
+
       delay(100);
     } else if (same == ALL_BLACK) { // TURN CORNER
       Serial.print("turn: ");
       Serial.println(turn == RIGHT ? "right" : "left");
 
-      turnCorner(turn, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(turn);
     } else if (SQUARE_COUNT == 2) {
-      if (lineArray[0] == 1 && lineArray[1] == 1 && lineArray[2] == 1) {
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-      } else if (lineArray[11] == 1 && lineArray[12] == 1 && lineArray[10] == 1) {
-        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+      if (lineArray[0] == 1 && lineArray[1] == 1) {
+        turnCorner(RIGHT);
+      } else if (lineArray[11] == 1 && lineArray[12] == 1) {
+        turnCorner(LEFT);
       }
     }
   } else if (STATE == SQUARE_STATE) {
     if (same == ALL_WHITE) { // time to exit square
-      inch_forward(100);
+      inch_forward(70);
 
       // turn right to leave square
-      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(RIGHT);
 
       if (SQUARE_COUNT == 4) {
         STATE = DOTTED_STATE;
@@ -650,7 +788,6 @@ void loop() {
         } else {
           maxColor = "green";
         }
-
       } else {
         STATE = DEFAULT_STATE;
       }
@@ -659,24 +796,45 @@ void loop() {
 
       // turn left to trace square
       delay(100);
-      turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(LEFT);
     }
   } else if (STATE == DOTTED_STATE) {
     if (same == ALL_WHITE) { // enter square
       inch_forward(30);
 
       // turn right to trace square
-      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+      turnCorner(RIGHT);
 
       STATE = SQUARE_STATE;
       SQUARE_COUNT = 5;
-      
+
       delay(100);
-    } 
+    }
   } else if (STATE == GRID_STATE) {
-    if (same == ALL_BLACK || lineArray[0] == 1) {
+    bool gap = findGap();
+    if (same == ALL_BLACK) {
+      turnCorner(LEFT);
+    } else if (same == ALL_WHITE) {
+      inch_forward(100);
+      readADC();
+      digitalConvert();
+
+      inch_backward(30);
+      if (all_same() == ALL_BLACK) {
+        turnCorner(LEFT);
+        return;
+      }
+      // turn right to trace square
+      turnCorner(RIGHT);
+
+      STATE = SQUARE_STATE;
+      SQUARE_COUNT = 6;
+
+      delay(100);
+    } else if (gap || (lineArray[0] == 1 && lineArray[1] == 1)) {
       stop();
-      String message;
+      inch_backward(75);
+      String message = "straight";
       for (int i = 0; i < 5; i++) {
         message = commWithServer(maxColor);
         if (!message.isEmpty() && message != "invalid") {
@@ -685,32 +843,21 @@ void loop() {
         delay(1000);
       }
 
-      inch_forward(50);
+      inch_forward(150);
 
       if (message == "left") {
-        turnCorner(LEFT, DEFAULT_PWM, DEFAULT_PWM);
+        turnCorner(LEFT);
+        left_count++;
       } else if (message == "right") {
-        turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
+        turnCorner(RIGHT);
+        right_count++;
       } else {
-        inch_forward(50);
+        inch_forward(100);
         STATE = GRID_STATE;
+        straight_count++;
       }
-
-
-    }
-    else if (same == ALL_WHITE) {
-      inch_forward(30);
-
-      // turn right to trace square
-      turnCorner(RIGHT, DEFAULT_PWM, DEFAULT_PWM);
-
-      STATE = SQUARE_STATE;
-      SQUARE_COUNT = 6;
-      
-      delay(100);
     }
   }
 
   delay(50);
-
 }
